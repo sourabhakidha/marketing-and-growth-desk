@@ -2,7 +2,7 @@
 
 Internal marketing & growth platform: Sense → Interpret → Decide → Execute → Learn. Product spec: Project Bible v1.0 and the Team Roles & Workflow Playbook (`docs/source/`).
 
-**Status: Phase 1 (Workspace) built.** Sign-in, roles, vocabularies, audit log, and the Workspace — New Activity (Task / Goal), task board, task workflow with hand-offs and approvals, goals with progress, activity log and CSV exports. Performance Planning, Calendar, Radar, Opportunities, AI Intelligence and Learning Loop are labelled "Planned".
+**Status:** Workspace, Calendar, Content Radar, Content Opportunities, AI Intelligence (briefs & scripts) and Learning Loop are built. Performance Planning is deferred (D-016) and labelled "later".
 
 ## Quick start
 
@@ -28,7 +28,7 @@ Netlify Functions locally: `npx netlify-cli dev` (serves `/api/*`).
 
 ```
 src/                 React app (pages, components, lib)
-netlify/functions/   Server endpoints (/api/health, /api/me)
+netlify/functions/   Server endpoints (/api/health, /api/me, /api/radar-scan, /api/ai-draft)
 netlify/lib/         Shared server code (auth, env, http)
 supabase/migrations/ SQL migrations — marketing_os schema ONLY
 supabase/tests/      Test-only Supabase stub + RLS tests

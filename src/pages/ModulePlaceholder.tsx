@@ -9,7 +9,7 @@ export function ModulePlaceholder({ module }: { module: ModuleDef }) {
         <p className="muted">{module.question}</p>
       </header>
       <StatePanel title="Not built yet">
-        <p>This module is scheduled for Phase {module.phase}. Nothing here is connected to real data yet.</p>
+        <p>{module.plannedNote ?? "Planned for a later release."} Nothing here is connected to real data.</p>
       </StatePanel>
     </>
   );

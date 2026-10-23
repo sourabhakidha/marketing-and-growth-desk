@@ -74,3 +74,33 @@ Decisions confirmed by the product owner (Nayan) for Akidha Marketing Desk (form
 - **Decision:** Migration `workspace` applied 2026-10-24: goals, tasks, workflow templates (12), per-task stages, append-only task events, and workflow actions (pick up, hand off, skip, return for rework, block/unblock, cancel/reopen, submit, approve / request changes, comment).
 - **Evidence:** 83 local database tests pass (access + business rules). Catalog fingerprint outside our schemas unchanged (1,729 objects). On production, a rolled-back end-to-end run (contributor creates → picks up → hands off → submits; admin approves) produced the expected statuses and 10 history events; nothing was left behind. `anon` can execute nothing and read nothing.
 - **Advisor note (accepted):** Supabase flags the workflow-action functions as "SECURITY DEFINER callable by signed-in users". This is intentional — they are the only path for status/stage changes and each checks membership and permissions itself; the private helper functions are not exposed through the Data API.
+
+## D-016 · Performance Planning deferred
+- **Decision:** Performance Planning is not built in this round; it stays visible in the navigation as "later". Everything else from the Bible module list is built.
+- **Impact:** No targets/actuals tables yet; Q-14 (performance data sources) stays open.
+
+## D-017 · Calendar
+- **Decision:** The Calendar shows task due dates, task publish dates and goal start/end dates. Entries are the records themselves — moving a date in the Calendar changes the task or goal. Tasks gain a `publish_date`; like the due date, only admins change it after creation, and every change is recorded in task history.
+- **Load hint:** a day where one person has 3+ open tasks due is marked "load" — a prompt to check, not a capacity calculation.
+
+## D-018 · Content Radar sources and scanning
+- **Decision:** Radar collects from (1) news & search feeds (Google News RSS, India edition), (2) official Indian sources (queries restricted to gov.in / nic.in / pib.gov.in), (3) Reddit (r/india, r/AskIndia; needs Reddit app credentials). Scans run when a member presses **Scan now**; there is no schedule and no new secret or service role.
+- **Rules:** every signal keeps source, URL, published time (when the source gives one) and collected time; duplicates are removed by URL fingerprint; an evidence class is recorded (public posts = anecdote). Members can also add a link by hand. Admins edit or switch off sources. A source that is not configured or fails shows that status — never "no news".
+
+## D-019 · Content Opportunities
+- **Decision:** Anyone can propose an opportunity (from a signal or from scratch) and score it on seven dimensions. Only admins decide (consider / needs research / approve / defer / reject; a reason is required for the last three) and only admins turn an approved opportunity into a task. The first task created marks it Converted; linking a signal marks the signal Converted.
+
+## D-020 · AI Intelligence scope and limits
+- **Decision:** AI drafts **briefs and scripts only**. Drafts are proposals: they never change a task, an opportunity or the knowledge base on their own. A person copies a draft, adds it to a task as a comment, marks it used, or discards it.
+- **Limit:** 30 drafts per person per day (India calendar day), enforced by the database.
+- **Implementation:** OpenAI is called only from a Netlify background function with a server-side key; output must match a fixed JSON schema (hook options, structure, script, on-screen text, CTA, claims requiring review, assumptions, patterns and evidence used). A rule-based check adds review flags for numbers, prices and absolute claims. Model name comes from `OPENAI_MODEL`.
+
+## D-021 · Knowledge base
+- **Decision:** AI drafting is grounded in (a) the AI-Ready Brand Guidelines (full working text) and (b) 47 pattern summaries of the Jul–Sep 2026 Scripts Master. Pattern entries carry no prices, savings figures or operational claims and are marked "pattern only — re-verify every claim". Admins can add, edit or switch off entries; references can be added later.
+
+## D-022 · Learning Loop
+- **Decision:** Anyone records a learning (observation, period, evidence, interpretation, confidence, limitations, next test, owner, review date, linked records). Admins accept or reject it (reason required to reject). Process insights (wait time before pick-up, stage time, rework) are computed only from recorded workflow timestamps; missing data is shown as "no data", never zero.
+
+## D-023 · Intelligence loop applied to production
+- **Decision:** Migrations `intelligence_loop` and `knowledge_seed` applied 2026-10-24.
+- **Evidence:** catalog fingerprint of everything outside our schemas identical before and after (2,441 objects at this date; other apps had added objects since D-015). Knowledge content checksum on production equals the local build (48 documents). 9 Radar sources seeded. Rolled-back production check: `anon` denied; contributor can propose an opportunity but cannot decide it or edit the knowledge base; admin decision works; nothing was left behind. All 18 tables have RLS enabled and forced; no grants to `anon`. Advisor: only the accepted "SECURITY DEFINER callable by signed-in users" notice for the action functions (see D-015).

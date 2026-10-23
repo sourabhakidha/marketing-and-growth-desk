@@ -15,7 +15,9 @@ export function Layout() {
         <nav aria-label="Modules">
           <NavLink to="/" end>Overview</NavLink>
           {MODULES.map((m) => (
-            <NavLink key={m.path} to={m.path}>{m.name}</NavLink>
+            <NavLink key={m.path} to={m.path} className={({ isActive }) => `${isActive ? "active" : ""}${m.built ? "" : " nav--planned"}`}>
+              {m.name}{!m.built && <span className="nav__tag">later</span>}
+            </NavLink>
           ))}
         </nav>
         <nav aria-label="Settings" className="sidebar__secondary">

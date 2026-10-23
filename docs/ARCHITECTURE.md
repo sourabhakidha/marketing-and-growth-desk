@@ -1,17 +1,17 @@
 # Architecture
 
-Akidha Marketing Desk: internal marketing operations platform (Project Bible v1.0). This document describes what is **built** (Phases 0–1) and the agreed target. Anything not built is labelled as such.
+Akidha Marketing Desk: internal marketing operations platform (Project Bible v1.0). This document describes what is **built** (Workspace, Calendar, Radar, Opportunities, AI Intelligence, Learning Loop; Performance Planning deferred — D-016) and the agreed target. Anything not built is labelled as such.
 
 ## Components
 
 | Layer | Implementation | Status |
 |---|---|---|
-| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod | Shell + Workspace (Phase 1) built |
+| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod | All modules except Performance Planning built |
 | Hosting | Netlify (static `dist/` + Functions), deploy previews per PR | Config in `netlify.toml` |
-| Server API | Netlify Functions (TypeScript) under `/api/*` | `/api/health`, `/api/me` |
+| Server API | Netlify Functions (TypeScript) under `/api/*` | `/api/health`, `/api/me`, `/api/radar-scan` and `/api/ai-draft` (background, up to 15 min) |
 | Database | Supabase Postgres, schema `marketing_os` in the shared "Akidha DB" project | Foundation + Workspace migrations applied; schema exposed |
 | Auth | Username + password (Supabase Auth, internal `.invalid` emails), gated by `marketing_os.members` | Built; 4 accounts created |
-| AI | OpenAI API via server functions only | Phase 4; env vars reserved |
+| AI | OpenAI API from the `ai-draft` background function only (D-020) | Built; needs `OPENAI_API_KEY` + `OPENAI_MODEL` |
 | Storage | Private bucket `marketing-os` | Phase 1+, not created |
 | CI | GitHub Actions: typecheck, unit tests, migration guard, secret scan, build, DB tests | `.github/workflows/ci.yml` |
 
@@ -58,9 +58,14 @@ The "Akidha DB" project hosts ~30 schemas for other apps and a shared `auth.user
 | `task_events` | Append-only task history: hand-offs, pick-ups, returns (with reason), blocks, approvals, reassignment, due-date and priority changes, comments. |
 | `task_contributors` | Optional supporting people on a task. |
 | `goal_progress` (view) | Progress per goal, computed from its declared method. |
+| `radar_sources`, `radar_scans`, `radar_signals` | Radar configuration, scan runs and collected signals (URL, published/collected time, topics, region, evidence class, status). |
+| `opportunities`, `opportunity_signals` | Proposed content opportunities, 7-dimension scores, admin decisions; links to supporting signals. Tasks carry `opportunity_id`. |
+| `knowledge_documents` | Brand guidelines, script patterns, references (full-text search) used to ground AI drafts. |
+| `ai_drafts` | Draft requests and outputs with provenance (model, knowledge and signal IDs, tokens), review flags and decision. |
+| `learnings` | Recorded learnings with evidence, confidence, limitations, next test and admin review. |
 
 ### Workflow actions (database functions, called via `supabase.rpc`)
-`task_pick_up`, `task_hand_off`, `task_skip_stage`, `task_return_for_rework`, `task_set_status` (in progress / blocked / cancelled / reopen), `task_submit_for_approval`, `task_decide` (admin approve or request changes), `task_comment`.
+`task_pick_up`, `task_hand_off`, `task_skip_stage`, `task_return_for_rework`, `task_set_status` (in progress / blocked / cancelled / reopen), `task_submit_for_approval`, `task_decide` (admin approve or request changes), `task_comment`, `opportunity_decide`, `learning_decide`, `radar_start_scan`, `radar_finish_scan`; `knowledge_search` (invoker rights).
 Task status can only change through these functions; each checks membership and permissions and writes a `task_events` row in the same transaction. Direct edits to status, stages or history are rejected by the database.
 
 ### Permissions (D-010 – D-012)
@@ -72,6 +77,11 @@ Task status can only change through these functions; each checks membership and 
 | Pick up, hand off, return, block, submit | ✓ | task owner or current stage owner |
 | Approve completion / request changes / reopen | ✓ | ✗ |
 | Create / manage goals | ✓ | ✗ (view, link tasks) |
+
+| Decide opportunities, create tasks from them | ✓ | ✗ (propose, score) |
+| Edit Radar sources / knowledge base | ✓ | ✗ (view, scan, add signals) |
+| Accept / reject learnings | ✓ | ✗ (record) |
+| AI drafts | ✓ (30/day) | ✓ (30/day) |
 
 Timestamps are stored as `timestamptz` (UTC) and rendered in Asia/Kolkata.
 

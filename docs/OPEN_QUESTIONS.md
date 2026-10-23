@@ -18,10 +18,11 @@ Items not yet decided. Needed-by = the phase that cannot start without the answe
 | Q-12 | Notifications needed (email / WhatsApp / none)? | Phase 1 | Not documented |
 | Q-13 | Netlify site name / custom domain; is a separate staging environment wanted? | Deploy | Not documented |
 | Q-14 | Performance data sources to integrate (Meta, analytics, manual import). | Phase 2 | Bible §21 |
-| Q-15 | Radar source set and access methods (APIs/RSS/official sources). | Phase 3 | Bible §8, §21 |
-| Q-16 | OpenAI model, monthly budget, data-handling stance; which AI outputs need approval before external use. | Phase 4 | Bible §10; Playbook §18 |
-| Q-17 | Retention/deletion policy for audit history, source records and personal data. | Phase 3 | Bible §18.1, §21 |
+| Q-15 | ~~Radar source set~~ — resolved by D-018. Open: do we want a scheduled daily scan later (needs a server secret)? | Later | D-018 |
+| Q-16 | Scope and limit resolved by D-020 (briefs & scripts, 30/person/day). **Still open:** which OpenAI model to set in `OPENAI_MODEL`, monthly budget, and data-handling stance. | Now | D-020 |
+| Q-17 | Retention/deletion policy for audit history, Radar signals and personal data (Radar stores no Reddit usernames). | Open | Bible §18.1, §21 |
 | Q-18 | What is the existing `marketing_meta` schema, and does it relate to this app? | Phase 2 | Supabase inspection |
 | Q-20 | Should contributors be able to add or edit workflow templates, or admins only (current: admins only, no editing UI yet)? | Phase 1 polish | Bible §15.1 |
 | Q-21 | Task-to-multiple-assets: keep one task per asset for now, or add batch size? (Playbook §10 "a batch can be one parent task with a batch size") | Phase 1 polish | Playbook §10 |
+| Q-22 | Performance Planning (deferred, D-016): targets, actuals source and cadence. | Later | D-016 |
 | Q-19 | Pre-existing exposure: ~21 tables in `public` readable by `anon` without RLS (other apps). Owner to decide whether to fix (outside this repo's scope). | Owner decision | Supabase inspection |

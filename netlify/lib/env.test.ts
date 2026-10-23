@@ -11,7 +11,7 @@ describe("server env", () => {
   });
   it("reports status flags without values", () => {
     const status = integrationStatus({ OPENAI_API_KEY: "sk-secret" });
-    expect(status).toEqual({ database: "not_configured", ai: "not_configured" });
+    expect(status).toEqual({ database: "not_configured", ai: "not_configured", reddit: "not_configured" });
     expect(JSON.stringify(status)).not.toContain("sk-secret");
   });
   it("flags a service-role key in the deploy environment", () => {

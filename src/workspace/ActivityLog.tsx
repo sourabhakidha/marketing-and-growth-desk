@@ -11,6 +11,7 @@ const TYPE_LABEL: Record<string, string> = {
   submitted_for_approval: "Submitted for approval", approved: "Approved", changes_requested: "Changes requested",
   cancelled: "Cancelled", reopened: "Reopened", comment: "Comment", owner_changed: "Reassigned",
   due_date_changed: "Due date changed", priority_changed: "Priority changed", goal_changed: "Goal changed",
+  publish_date_changed: "Publish date changed",
 };
 
 export function ActivityLog() {

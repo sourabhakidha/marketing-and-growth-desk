@@ -7,7 +7,7 @@ export interface TaskFormValues {
   title: string; task_type: string; work_origin: string; owner_id: string; priority: string; due_date: string;
   goal_id: string; counts_toward_goal: boolean; brief: string; deliverable_format: string; channel: string;
   requester: string; estimate_hours: string; completion_criteria: string; reviewer_id: string;
-  workflow_template_id: string; deliverable_url: string;
+  workflow_template_id: string; deliverable_url: string; publish_date: string;
 }
 
 export function taskToValues(t: Task): TaskFormValues {
@@ -17,7 +17,7 @@ export function taskToValues(t: Task): TaskFormValues {
     deliverable_format: t.deliverable_format ?? "", channel: t.channel ?? "", requester: t.requester ?? "",
     estimate_hours: t.estimated_minutes ? String(+(t.estimated_minutes / 60).toFixed(2)) : "",
     completion_criteria: t.completion_criteria ?? "", reviewer_id: t.reviewer_id ?? "",
-    workflow_template_id: t.workflow_template_id ?? "", deliverable_url: t.deliverable_url ?? "",
+    workflow_template_id: t.workflow_template_id ?? "", deliverable_url: t.deliverable_url ?? "", publish_date: t.publish_date ?? "",
   };
 }
 
@@ -31,6 +31,7 @@ export function valuesToTask(v: TaskFormValues): NewTask {
     estimated_minutes: Number.isFinite(hours) && hours > 0 ? Math.round(hours * 60) : null,
     completion_criteria: orNull(v.completion_criteria), reviewer_id: orNull(v.reviewer_id),
     workflow_template_id: orNull(v.workflow_template_id), deliverable_url: orNull(v.deliverable_url),
+    publish_date: orNull(v.publish_date),
   };
 }
 
@@ -101,6 +102,9 @@ export function TaskForm({ initial, mode, restrictedEditable, onSubmit, onCancel
       </Field>
       <Field label="Due date" hint={!restrictedEditable ? "Only admins can change" : undefined}>
         <input type="date" value={v.due_date} disabled={!restrictedEditable} onChange={(e) => set("due_date", e.target.value)} />
+      </Field>
+      <Field label="Planned publish date" hint={!restrictedEditable ? "Only admins can change" : "Optional — shows on the Calendar"}>
+        <input type="date" value={v.publish_date} disabled={!restrictedEditable} onChange={(e) => set("publish_date", e.target.value)} />
       </Field>
       <Field label="Priority" hint={!restrictedEditable ? "Only admins can change" : undefined}>
         <select value={v.priority} disabled={!restrictedEditable} onChange={(e) => set("priority", e.target.value)}>

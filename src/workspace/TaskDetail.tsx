@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { type TaskEvent, type TaskStage, useGoals, useLookups, useTask, useUpdateTask, useWorkflowAction, type WorkflowAction } from "../lib/api.ts";
+import { type TaskEvent, type TaskStage, useDrafts, useGoals, useLookups, useOpportunities, useTask, useUpdateTask, useWorkflowAction, type WorkflowAction } from "../lib/api.ts";
+import { DRAFT_STATUS_LABEL } from "../lib/labels.ts";
+import { Chip } from "../components/Tone.tsx";
 import { formatDate, formatDateTime, formatDuration, goalRef, isOverdue, minutesBetween, taskRef } from "../lib/format.ts";
 import { availableActions } from "../lib/permissions.ts";
 import { useMember } from "../lib/session.tsx";
@@ -17,6 +19,8 @@ export function TaskDetail() {
   const ref = Number(useParams().ref);
   const q = useTask(ref);
   const goals = useGoals();
+  const opps = useOpportunities();
+  const drafts = useDrafts();
   const { member: me } = useMember();
   const { label, memberName, members, ready } = useLookups();
   const action = useWorkflowAction();
@@ -43,6 +47,8 @@ export function TaskDetail() {
     hasNextStage: Boolean(next), hasEarlierDoneStage: earlierDone.length > 0,
   });
   const goal = goals.data?.find((g) => g.id === task.goal_id);
+  const opp = opps.data?.find((o) => o.id === task.opportunity_id);
+  const taskDrafts = (drafts.data ?? []).filter((d) => d.task_id === task.id);
   const activeMembers = (members.data ?? []).filter((m) => m.is_active);
 
   function open(d: Dialog) {
@@ -69,7 +75,10 @@ export function TaskDetail() {
             <PriorityMark code={task.priority} label={label("priority", task.priority)} />
           </div>
         </div>
-        {acts.has("edit") && <button type="button" className="button" onClick={() => { update.reset(); setDialog("edit"); }}>Edit details</button>}
+        <div className="row-actions">
+          {task.status !== "done" && task.status !== "cancelled" && <Link className="button" to={`/intelligence?task=${task.ref}`}>Draft with AI</Link>}
+          {acts.has("edit") && <button type="button" className="button" onClick={() => { update.reset(); setDialog("edit"); }}>Edit details</button>}
+        </div>
       </header>
 
       {task.status === "blocked" && <div className="state state--error"><strong>Blocked:</strong> {task.blocker_reason}</div>}
@@ -101,7 +110,9 @@ export function TaskDetail() {
           <dl className="details">
             <dt>Owner</dt><dd>{memberName(task.owner_id)}</dd>
             <dt>Due</dt><dd className={isOverdue(task.due_date, task.status) ? "due--late" : undefined}>{formatDate(task.due_date)}</dd>
+            <dt>Publish date</dt><dd>{formatDate(task.publish_date)}</dd>
             <dt>Reviewer</dt><dd>{memberName(task.reviewer_id)}</dd>
+            {opp && <><dt>From opportunity</dt><dd><Link to={`/opportunities/${opp.ref}`}>O-{opp.ref} · {opp.title}</Link></dd></>}
             <dt>Goal</dt><dd>{goal ? <Link to="/workspace/goals">{goalRef(goal.ref)} · {goal.title}</Link> : "Independent task"}{goal && task.counts_toward_goal && <span className="tag">counts as deliverable</span>}</dd>
             <dt>Format</dt><dd>{task.deliverable_format ?? "—"}</dd>
             <dt>Channel</dt><dd>{task.channel ?? "—"}</dd>
@@ -113,6 +124,9 @@ export function TaskDetail() {
           </dl>
           {task.brief && <><h3>Brief</h3><p className="prewrap">{task.brief}</p></>}
           {task.completion_criteria && <><h3>Completion criteria</h3><p className="prewrap">{task.completion_criteria}</p></>}
+          {taskDrafts.length > 0 && <><h3>AI drafts</h3><ul className="linked-tasks">{taskDrafts.map((d) => (
+            <li key={d.id}><Link to={`/intelligence/drafts/${d.ref}`}>D-{d.ref} · {d.output?.working_title ?? d.kind}</Link><Chip code={d.status} label={DRAFT_STATUS_LABEL[d.status]!} /></li>
+          ))}</ul></>}
         </section>
 
         <section className="card">
@@ -233,7 +247,7 @@ const EVENT_TEXT: Record<string, string> = {
   submitted_for_approval: "submitted for approval", approved: "approved completion", changes_requested: "requested changes",
   cancelled: "cancelled the task", reopened: "reopened the task", comment: "commented",
   owner_changed: "reassigned the task", due_date_changed: "changed the due date", priority_changed: "changed priority",
-  goal_changed: "changed the linked goal",
+  goal_changed: "changed the linked goal", publish_date_changed: "changed the publish date",
 };
 
 function EventRow({ e, label, memberName }: { e: TaskEvent; label: (v: string, c: string | null | undefined) => string; memberName: (id: string | null) => string }) {
@@ -243,7 +257,7 @@ function EventRow({ e, label, memberName }: { e: TaskEvent; label: (v: string, c
   if (e.event_type === "returned_for_rework") detail = `${label("workflow_stage", e.from_value)} → ${label("workflow_stage", e.to_value)}`;
   if (["stage_entered", "stage_completed", "stage_skipped", "picked_up"].includes(e.event_type)) detail = label("workflow_stage", e.stage_code);
   if (e.event_type === "owner_changed") detail = `${memberName(e.from_owner_id)} → ${memberName(e.to_owner_id)}`;
-  if (e.event_type === "due_date_changed") detail = `${formatDate(e.from_value)} → ${formatDate(e.to_value)}`;
+  if (e.event_type === "due_date_changed" || e.event_type === "publish_date_changed") detail = `${formatDate(e.from_value)} → ${formatDate(e.to_value)}`;
   if (e.event_type === "priority_changed") detail = `${label("priority", e.from_value)} → ${label("priority", e.to_value)}`;
   if (e.event_type === "status_changed" && ["blocked", "cancelled", "in_review", "changes_requested", "done"].includes(e.to_value ?? "")) return null;
   return (

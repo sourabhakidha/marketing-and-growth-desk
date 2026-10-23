@@ -203,6 +203,6 @@ select test.ok(test.count_as('authenticated', 'outsider', 'select * from marketi
 select test.ok(test.try('postgres', null, 'update marketing_os.task_events set note = $$x$$') like '%append-only%',
   'task history cannot be edited, even by the owner');
 
-rollback;
+commit;
 
 \echo 'All workspace tests passed'

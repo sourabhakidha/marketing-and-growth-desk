@@ -50,7 +50,10 @@ Site configuration → Environment variables:
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | publishable / anon key (Project Settings → API Keys) | Builds |
 | `SUPABASE_URL` | same URL | Functions |
 | `SUPABASE_PUBLISHABLE_KEY` | same publishable key | Functions |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | leave unset until Phase 4 | Functions |
+| `OPENAI_API_KEY` | OpenAI secret key (mark as secret) | Functions |
+| `OPENAI_MODEL` | the model name you choose (Q-16) | Functions |
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | from a Reddit "script" app (optional; Reddit sources show "not configured" without them) | Functions |
+| `REDDIT_USER_AGENT` | e.g. `akidha-marketing-desk/1.0 by <reddit username>` | Functions |
 
 Never add `SUPABASE_SERVICE_ROLE_KEY` to Netlify. `/api/health` reports configured/not-configured flags (never values) and warns if it is present.
 

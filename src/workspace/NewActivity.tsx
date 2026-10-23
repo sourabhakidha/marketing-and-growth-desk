@@ -9,7 +9,7 @@ import { TaskForm, type TaskFormValues, valuesToTask } from "./TaskForm.tsx";
 const emptyTask = (ownerId: string): TaskFormValues => ({
   title: "", task_type: "", work_origin: "", owner_id: ownerId, priority: "", due_date: "", goal_id: "",
   counts_toward_goal: false, brief: "", deliverable_format: "", channel: "", requester: "", estimate_hours: "",
-  completion_criteria: "", reviewer_id: "", workflow_template_id: "", deliverable_url: "",
+  completion_criteria: "", reviewer_id: "", workflow_template_id: "", deliverable_url: "", publish_date: "",
 });
 
 /** The single "New activity" entry point (Bible §5.1): choose Task or Goal. */

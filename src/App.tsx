@@ -15,6 +15,11 @@ import { Goals } from "./workspace/Goals.tsx";
 import { TaskBoard } from "./workspace/TaskBoard.tsx";
 import { TaskDetail } from "./workspace/TaskDetail.tsx";
 import { Workspace } from "./workspace/Workspace.tsx";
+import { Calendar } from "./modules/Calendar.tsx";
+import { Radar } from "./modules/Radar.tsx";
+import { NewOpportunity, OpportunityDetail, OpportunityList } from "./modules/Opportunities.tsx";
+import { DraftDetail, Drafts, Intelligence, Knowledge } from "./modules/Intelligence.tsx";
+import { LearningLoop, Learnings, ProcessInsights } from "./modules/Learning.tsx";
 
 const router = createBrowserRouter([
   { path: "/login", element: <Login /> },
@@ -36,6 +41,28 @@ const router = createBrowserRouter([
             ],
           },
           { path: "/workspace/tasks/:ref", element: <TaskDetail /> },
+          { path: "/calendar", element: <Calendar /> },
+          { path: "/radar", element: <Radar /> },
+          { path: "/opportunities", element: <OpportunityList /> },
+          { path: "/opportunities/new", element: <NewOpportunity /> },
+          { path: "/opportunities/:ref", element: <OpportunityDetail /> },
+          {
+            path: "/intelligence",
+            element: <Intelligence />,
+            children: [
+              { index: true, element: <Drafts /> },
+              { path: "knowledge", element: <Knowledge /> },
+            ],
+          },
+          { path: "/intelligence/drafts/:ref", element: <DraftDetail /> },
+          {
+            path: "/learning",
+            element: <LearningLoop />,
+            children: [
+              { index: true, element: <Learnings /> },
+              { path: "process", element: <ProcessInsights /> },
+            ],
+          },
           ...MODULES.filter((m) => !isBuilt(m)).map((m) => ({ path: m.path, element: <ModulePlaceholder module={m} /> })),
           { path: "/settings/team", element: <Team /> },
           { path: "/settings/vocabularies", element: <Vocabularies /> },
