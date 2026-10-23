@@ -1,0 +1,59 @@
+# Architecture
+
+Akidha Marketing OS: internal marketing operations platform (Project Bible v1.0). This document describes what is **built** (Phase 0) and the agreed target. Anything not built is labelled as such.
+
+## Components
+
+| Layer | Implementation | Status |
+|---|---|---|
+| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod | Phase 0 shell built |
+| Hosting | Netlify (static `dist/` + Functions), deploy previews per PR | Config in `netlify.toml` |
+| Server API | Netlify Functions (TypeScript) under `/api/*` | `/api/health`, `/api/me` |
+| Database | Supabase Postgres, schema `marketing_os` in the shared "Akidha DB" project | Applied 2026-10-24; Data API exposure pending |
+| Auth | Username + password (Supabase Auth, internal `.invalid` emails), gated by `marketing_os.members` | Built; 4 accounts created |
+| AI | OpenAI API via server functions only | Phase 4; env vars reserved |
+| Storage | Private bucket `marketing-os` | Phase 1+, not created |
+| CI | GitHub Actions: typecheck, unit tests, migration guard, secret scan, build, DB tests | `.github/workflows/ci.yml` |
+
+```
+Browser (publishable key + user JWT)
+   │  RLS-scoped reads/writes ──────────────► Supabase Data API ─► marketing_os.* (RLS)
+   │  sensitive actions (Bearer JWT) ─► Netlify Functions ─► same RLS-scoped client
+   │                                         └─► OpenAI (Phase 4, server-side key)
+```
+
+### Request rules
+- The browser only ever holds the **publishable** key and the signed-in user's JWT. `src/lib/config.ts` refuses a service-role key.
+- Every server function starts with `requireMember(req, { role? })` (`netlify/lib/auth.ts`): it validates the session with Supabase and the membership row, then queries **as the caller**, so RLS applies on the server too.
+- Consequential state changes (approvals, AI-proposal decisions, exports) will be implemented as server functions and/or `security definer` database functions that check the role and write an audit event in the same transaction.
+- Errors returned to users never include secrets or stack traces (`netlify/lib/http.ts`).
+
+## Isolation inside the shared Supabase project
+
+The "Akidha DB" project hosts ~30 schemas for other apps and a shared `auth.users`. A read-only inspection on 2026-10-24 found tables in `public` without RLS that `anon`/`authenticated` can read; those belong to other apps and are not changed by this repo (flagged to the owner separately).
+
+1. **Own schema only.** All objects live in `marketing_os`; helpers in `marketing_os_private`. `create schema` without `IF NOT EXISTS` makes the migration fail rather than merge into an existing schema.
+2. **Deny by default.** `PUBLIC` and `anon` get nothing (schema, tables or functions). `authenticated` gets explicit per-table grants. Default privileges inside our schemas revoke `PUBLIC` execute on new functions.
+3. **RLS enabled and forced on every table.** Every policy requires an active membership (`marketing_os_private.is_member()` / `is_admin()`), so a shared-auth login from another app has no access.
+4. **Private helpers.** `security definer` functions with `set search_path = ''`, in a schema that must **not** be added to the Data API's exposed schemas.
+5. **Append-only audit log.** `marketing_os.audit_events` is written only by triggers/definer functions; update, delete and truncate are blocked even for the owner.
+6. **Service-role key kept off the platform.** It bypasses RLS across every schema in the project, so it is used only by the admin's local `scripts/create-member.mjs` and never set in Netlify (`/api/health` warns if it is). A dedicated least-privilege database role for background jobs (Radar ingestion, Phase 3) will be proposed separately.
+7. **Storage isolation (when needed).** A new private bucket with policies matching only that `bucket_id`.
+8. **Automated guards.**
+   - `scripts/check-migrations.mjs` (CI): rejects references to other schemas, project-wide objects (roles, extensions, publications), grants to `anon`/`public`, missing `ENABLE`/`FORCE ROW LEVEL SECURITY`, and functions without an empty `search_path`.
+   - `scripts/test-db.sh` (CI): applies migrations to a throwaway Postgres, **diffs the catalog outside our schemas before/after** (must be identical) and runs the access tests in `supabase/tests/10_rls.test.sql`.
+9. **Project-wide settings need separate approval.** Exposing `marketing_os` in the Data API (Settings → API → Exposed schemas) is the one project-level change Phase 0 needs. Disabling public sign-ups would affect other apps and is **not** required: membership gates access regardless.
+
+## Data model (Phase 0)
+
+| Table | Purpose |
+|---|---|
+| `members` | Who can use the app and their role (`admin` / `contributor`). Deactivate, never delete. |
+| `vocab_terms` | Controlled vocabularies: task_type, work_origin, task_status, goal_status, priority, workflow_stage, performance_area. |
+| `audit_events` | Append-only history: actor, source (user/system/automation/ai_approved), entity, event, old/new values. |
+
+Timestamps are stored as `timestamptz` (UTC) and rendered in Asia/Kolkata.
+
+## Environment variables
+
+See `.env.example`. Browser variables are prefixed `VITE_` and must be public values. `OPENAI_API_KEY` and any future secrets are server-only. `SUPABASE_SERVICE_ROLE_KEY` lives only in the admin's `.env.local`.

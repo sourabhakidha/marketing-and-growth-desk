@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.netlify/
+coverage/
+*.log
+.DS_Store
+# Secrets: never commit real environment files
+.env
+.env.*
+!.env.example
