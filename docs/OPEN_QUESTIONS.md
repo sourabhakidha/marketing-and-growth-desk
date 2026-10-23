@@ -19,7 +19,7 @@ Items not yet decided. Needed-by = the phase that cannot start without the answe
 | Q-13 | Netlify site name / custom domain; is a separate staging environment wanted? | Deploy | Not documented |
 | Q-14 | Performance data sources to integrate (Meta, analytics, manual import). | Phase 2 | Bible §21 |
 | Q-15 | ~~Radar source set~~ — resolved by D-018. Open: do we want a scheduled daily scan later (needs a server secret)? | Later | D-018 |
-| Q-16 | Scope and limit resolved by D-020 (briefs & scripts, 30/person/day). **Still open:** which OpenAI model to set in `OPENAI_MODEL`, monthly budget, and data-handling stance. | Now | D-020 |
+| Q-16 | Scope and limit resolved by D-020 (briefs & scripts, 30/person/day). Provider: Gemini free tier (D-024). **Still open:** whether to move to a paid tier later (no provider review of data, higher limits). | Now | D-020 |
 | Q-17 | Retention/deletion policy for audit history, Radar signals and personal data (Radar stores no Reddit usernames). | Open | Bible §18.1, §21 |
 | Q-18 | What is the existing `marketing_meta` schema, and does it relate to this app? | Phase 2 | Supabase inspection |
 | Q-20 | Should contributors be able to add or edit workflow templates, or admins only (current: admins only, no editing UI yet)? | Phase 1 polish | Bible §15.1 |

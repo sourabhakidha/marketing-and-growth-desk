@@ -50,8 +50,10 @@ Site configuration → Environment variables:
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | publishable / anon key (Project Settings → API Keys) | Builds |
 | `SUPABASE_URL` | same URL | Functions |
 | `SUPABASE_PUBLISHABLE_KEY` | same publishable key | Functions |
-| `OPENAI_API_KEY` | OpenAI secret key (mark as secret) | Functions |
-| `OPENAI_MODEL` | the model name you choose (Q-16) | Functions |
+| `AI_PROVIDER` | `gemini` (D-024) | Functions |
+| `GEMINI_API_KEY` | Google AI Studio key (mark as secret) | Functions |
+| `GEMINI_MODEL` | model ID from AI Studio, e.g. a Flash model (optional; default `gemini-2.5-flash`) | Functions |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | only if you switch `AI_PROVIDER` to `openai` | Functions |
 | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | from a Reddit "script" app (optional; Reddit sources show "not configured" without them) | Functions |
 | `REDDIT_USER_AGENT` | e.g. `akidha-marketing-desk/1.0 by <reddit username>` | Functions |
 

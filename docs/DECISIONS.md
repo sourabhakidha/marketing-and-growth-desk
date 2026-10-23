@@ -104,3 +104,9 @@ Decisions confirmed by the product owner (Nayan) for Akidha Marketing Desk (form
 ## D-023 · Intelligence loop applied to production
 - **Decision:** Migrations `intelligence_loop` and `knowledge_seed` applied 2026-10-24.
 - **Evidence:** catalog fingerprint of everything outside our schemas identical before and after (2,441 objects at this date; other apps had added objects since D-015). Knowledge content checksum on production equals the local build (48 documents). 9 Radar sources seeded. Rolled-back production check: `anon` denied; contributor can propose an opportunity but cannot decide it or edit the knowledge base; admin decision works; nothing was left behind. All 18 tables have RLS enabled and forced; no grants to `anon`. Advisor: only the accepted "SECURITY DEFINER callable by signed-in users" notice for the action functions (see D-015).
+
+## D-024 · AI provider: Google Gemini (free tier), switchable
+- **Decision:** AI drafts run on Google Gemini using an AI Studio API key on the free tier, to avoid paid API costs. OpenAI stays supported; the provider is chosen with `AI_PROVIDER` (`gemini` | `openai`; without it, Gemini is used when `GEMINI_API_KEY` is set). Changes the provider part of D-020; scope, the 30-per-day limit, the fixed output format and review flags are unchanged.
+- **Data rule:** on the free tier the provider may use and review what is sent. Requests contain brand guidelines, script patterns, task/opportunity text and public signals only. **Never put customer or patient names, phone numbers or prescriptions into briefs or draft instructions** (warning shown on the draft form).
+- **Limits:** free-tier request limits apply; when hit, the draft fails with a "free-tier limit reached" message and can be requested again later.
+- **Model:** `GEMINI_MODEL` (default `gemini-2.5-flash` if unset; set the exact ID shown in AI Studio).

@@ -164,7 +164,7 @@ function NewDraft({ initialTaskRef, initialOppRef, disabled }: { initialTaskRef:
         <Field label="Format"><select value={format} onChange={(e) => setFormat(e.target.value)}>{FORMATS.map((f) => <option key={f}>{f}</option>)}</select></Field>
         <Field label="Duration / size" wide><input value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="e.g. 45 s, 9:16 · or 5-slide carousel" /></Field>
       </div>
-      <Field label="Instructions" hint="Angle, audience, must-include points, things to avoid. Give verified facts here — the AI will not invent them.">
+      <Field label="Instructions" hint="Angle, audience, must-include points, things to avoid. Give verified facts here — the AI will not invent them. Never include customer or patient names, phone numbers or prescriptions: on the free AI plan the provider may review what is sent.">
         <textarea rows={4} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
       </Field>
       <ErrorText error={error} />

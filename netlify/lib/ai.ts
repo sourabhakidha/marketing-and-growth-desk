@@ -135,12 +135,12 @@ export function reviewFlags(out: DraftOutput, suppliedUrls: string[]): string[] 
   return flags;
 }
 
-export interface OpenAIResult { output: DraftOutput; model: string; promptTokens: number | null; completionTokens: number | null }
+export interface DraftResult { output: DraftOutput; model: string; promptTokens: number | null; completionTokens: number | null }
 
 export async function callOpenAI(
   messages: { role: string; content: string }[],
   opts: { apiKey: string; model: string; fetcher?: typeof fetch; timeoutMs?: number },
-): Promise<OpenAIResult> {
+): Promise<DraftResult> {
   const fetcher = opts.fetcher ?? fetch;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 240_000);
@@ -166,7 +166,7 @@ export async function callOpenAI(
     if (msg?.refusal) throw new Error(`Model declined: ${msg.refusal}`);
     if (!msg?.content) throw new Error("Model returned no content");
     return {
-      output: JSON.parse(msg.content) as DraftOutput,
+      output: normalizeDraft(JSON.parse(msg.content)),
       model: body.model ?? opts.model,
       promptTokens: body.usage?.prompt_tokens ?? null,
       completionTokens: body.usage?.completion_tokens ?? null,
@@ -177,4 +177,117 @@ export async function callOpenAI(
   } finally {
     clearTimeout(t);
   }
+}
+
+/** Coerce model output into the DraftOutput shape so a slightly-off response can never break the UI. */
+export function normalizeDraft(raw: unknown): DraftOutput {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(str).filter((x) => x.trim() !== "") : typeof v === "string" && v.trim() ? [v] : []);
+  const structure = Array.isArray(o.structure)
+    ? o.structure.map((b) => {
+        const r = (b && typeof b === "object" ? b : {}) as Record<string, unknown>;
+        return { beat: str(r.beat), content: str(r.content ?? (typeof b === "string" ? b : "")) };
+      }).filter((b) => b.beat || b.content)
+    : [];
+  return {
+    working_title: str(o.working_title) || "Untitled draft",
+    objective: str(o.objective), audience: str(o.audience), language: str(o.language),
+    format_and_duration: str(o.format_and_duration), core_message: str(o.core_message),
+    hook_options: list(o.hook_options), structure, script_text: str(o.script_text),
+    on_screen_text: list(o.on_screen_text), cta: str(o.cta), visual_direction: str(o.visual_direction),
+    claims_requiring_review: list(o.claims_requiring_review), assumptions_and_gaps: list(o.assumptions_and_gaps),
+    pattern_references: list(o.pattern_references), evidence_used: list(o.evidence_used),
+  };
+}
+
+/** Same schema without keywords Gemini's older responseSchema field rejects. */
+function geminiLegacySchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(geminiLegacySchema);
+  if (!node || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node)) if (k !== "additionalProperties") out[k] = geminiLegacySchema(v);
+  return out;
+}
+
+/** Google Gemini (AI Studio key). System message becomes systemInstruction; output is forced to JSON matching DRAFT_SCHEMA. */
+export async function callGemini(
+  messages: { role: string; content: string }[],
+  opts: { apiKey: string; model: string; fetcher?: typeof fetch; timeoutMs?: number },
+): Promise<DraftResult> {
+  const fetcher = opts.fetcher ?? fetch;
+  const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  const contents = messages.filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:generateContent`;
+
+  const attempt = async (schemaField: "responseJsonSchema" | "responseSchema") => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 240_000);
+    try {
+      const res = await fetcher(url, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { "x-goog-api-key": opts.apiKey, "content-type": "application/json" },
+        body: JSON.stringify({
+          ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+          contents,
+          generationConfig: {
+            responseMimeType: "application/json",
+            [schemaField]: schemaField === "responseSchema" ? geminiLegacySchema(DRAFT_SCHEMA) : DRAFT_SCHEMA,
+            maxOutputTokens: 16000,
+            temperature: 0.7,
+          },
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: { message?: string; status?: string };
+        modelVersion?: string;
+        promptFeedback?: { blockReason?: string };
+        candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+      };
+      return { res, body };
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") throw new Error("Gemini request timed out");
+      throw err;
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  let { res, body } = await attempt("responseJsonSchema");
+  if (res.status === 400 && /responseJsonSchema|response_json_schema|Unknown name/i.test(body.error?.message ?? "")) {
+    ({ res, body } = await attempt("responseSchema"));
+  }
+  if (res.status === 429) {
+    throw new Error("Gemini free-tier limit reached. Wait a minute and try again (daily limits reset at midnight Pacific time).");
+  }
+  if (!res.ok) throw new Error(`Gemini error ${res.status}: ${body.error?.message ?? "request failed"}`);
+  if (body.promptFeedback?.blockReason) throw new Error(`Gemini blocked the request: ${body.promptFeedback.blockReason}`);
+  const cand = body.candidates?.[0];
+  const text = (cand?.content?.parts ?? []).filter((p) => !p.thought).map((p) => p.text ?? "").join("");
+  if (!text.trim()) throw new Error(`Gemini returned no content${cand?.finishReason ? ` (${cand.finishReason})` : ""}`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(cand?.finishReason === "MAX_TOKENS" ? "Gemini stopped before finishing (output too long). Try a shorter format." : "Gemini returned malformed output");
+  }
+  return {
+    output: normalizeDraft(parsed),
+    model: body.modelVersion ?? opts.model,
+    promptTokens: body.usageMetadata?.promptTokenCount ?? null,
+    completionTokens: body.usageMetadata?.candidatesTokenCount ?? null,
+  };
+}
+
+/** Dispatch to the configured provider (D-024). */
+export function callModel(
+  messages: { role: string; content: string }[],
+  cfg: { provider: "gemini" | "openai"; apiKey: string; model: string },
+  fetcher?: typeof fetch,
+): Promise<DraftResult> {
+  const opts = { apiKey: cfg.apiKey, model: cfg.model, ...(fetcher ? { fetcher } : {}) };
+  return cfg.provider === "gemini" ? callGemini(messages, opts) : callOpenAI(messages, opts);
 }

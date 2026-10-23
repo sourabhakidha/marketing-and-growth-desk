@@ -11,7 +11,7 @@ Akidha Marketing Desk: internal marketing operations platform (Project Bible v1.
 | Server API | Netlify Functions (TypeScript) under `/api/*` | `/api/health`, `/api/me`, `/api/radar-scan` and `/api/ai-draft` (background, up to 15 min) |
 | Database | Supabase Postgres, schema `marketing_os` in the shared "Akidha DB" project | Foundation + Workspace migrations applied; schema exposed |
 | Auth | Username + password (Supabase Auth, internal `.invalid` emails), gated by `marketing_os.members` | Built; 4 accounts created |
-| AI | OpenAI API from the `ai-draft` background function only (D-020) | Built; needs `OPENAI_API_KEY` + `OPENAI_MODEL` |
+| AI | Gemini (default) or OpenAI, from the `ai-draft` background function only (D-020, D-024) | Built; needs `GEMINI_API_KEY` |
 | Storage | Private bucket `marketing-os` | Phase 1+, not created |
 | CI | GitHub Actions: typecheck, unit tests, migration guard, secret scan, build, DB tests | `.github/workflows/ci.yml` |
 
@@ -19,7 +19,7 @@ Akidha Marketing Desk: internal marketing operations platform (Project Bible v1.
 Browser (publishable key + user JWT)
    │  RLS-scoped reads/writes ──────────────► Supabase Data API ─► marketing_os.* (RLS)
    │  sensitive actions (Bearer JWT) ─► Netlify Functions ─► same RLS-scoped client
-   │                                         └─► OpenAI (Phase 4, server-side key)
+   │                                         └─► Gemini / OpenAI (server-side key)
 ```
 
 ### Request rules

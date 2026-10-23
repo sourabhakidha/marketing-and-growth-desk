@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasForbiddenServerSecrets, integrationStatus, readServerEnv } from "./env.ts";
+import { aiConfig, DEFAULT_GEMINI_MODEL, hasForbiddenServerSecrets, integrationStatus, readServerEnv } from "./env.ts";
 
 describe("server env", () => {
   it("is null until both Supabase values are present", () => {
@@ -17,5 +17,24 @@ describe("server env", () => {
   it("flags a service-role key in the deploy environment", () => {
     expect(hasForbiddenServerSecrets({ SUPABASE_SERVICE_ROLE_KEY: "x" })).toBe(true);
     expect(hasForbiddenServerSecrets({})).toBe(false);
+  });
+});
+
+describe("ai provider config", () => {
+  it("prefers Gemini when its key is set, with a default model", () => {
+    expect(aiConfig({ GEMINI_API_KEY: "g" })).toEqual({ provider: "gemini", apiKey: "g", model: DEFAULT_GEMINI_MODEL });
+    expect(aiConfig({ GEMINI_API_KEY: "g", GEMINI_MODEL: "m" })?.model).toBe("m");
+  });
+  it("uses OpenAI only with key and model, or when asked explicitly", () => {
+    expect(aiConfig({ OPENAI_API_KEY: "o" })).toBeNull();
+    expect(aiConfig({ OPENAI_API_KEY: "o", OPENAI_MODEL: "x" })?.provider).toBe("openai");
+    expect(aiConfig({ AI_PROVIDER: "openai", GEMINI_API_KEY: "g", OPENAI_API_KEY: "o", OPENAI_MODEL: "x" })?.provider).toBe("openai");
+    expect(aiConfig({ AI_PROVIDER: "gemini" })).toBeNull();
+    expect(aiConfig({ AI_PROVIDER: "other", GEMINI_API_KEY: "g" })).toBeNull();
+  });
+  it("reports ai configured for Gemini without exposing the key", () => {
+    const s = integrationStatus({ GEMINI_API_KEY: "secret-g" });
+    expect(s.ai).toBe("configured");
+    expect(JSON.stringify(s)).not.toContain("secret-g");
   });
 });

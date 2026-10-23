@@ -1,13 +1,13 @@
 import type { Config } from "@netlify/functions";
 import { requireMember } from "../lib/auth.ts";
 import {
-  buildMessages, callOpenAI, retrievalQuery, reviewFlags,
+  buildMessages, callModel, retrievalQuery, reviewFlags,
   type KnowledgeContext, type OpportunityContext, type SignalContext, type TaskContext,
 } from "../lib/ai.ts";
 import { aiConfig } from "../lib/env.ts";
 
 // Background function: drafts a brief or script for a queued ai_drafts row.
-// Runs AS the requesting member; the OpenAI key never leaves the server.
+// Runs AS the requesting member; the AI provider key never leaves the server.
 export default async (req: Request) => {
   let me: Awaited<ReturnType<typeof requireMember>>;
   try {
@@ -27,7 +27,7 @@ export default async (req: Request) => {
   if (!draft || draft.created_by !== me.memberId || draft.status !== "queued") return;
 
   const cfg = aiConfig();
-  if (!cfg) { await fail("AI is not configured: add OPENAI_API_KEY and OPENAI_MODEL in Netlify."); return; }
+  if (!cfg) { await fail("AI is not configured: add GEMINI_API_KEY (or OPENAI_API_KEY + OPENAI_MODEL) in Netlify, then redeploy."); return; }
 
   try {
     await me.db.from("ai_drafts").update({ status: "running" }).eq("id", draftId);
@@ -63,7 +63,7 @@ export default async (req: Request) => {
       opportunity,
       signals,
     });
-    const result = await callOpenAI(messages, { apiKey: cfg.apiKey, model: cfg.model });
+    const result = await callModel(messages, cfg);
     const flags = reviewFlags(result.output, signals.map((s) => s.url));
 
     await me.db.from("ai_drafts").update({

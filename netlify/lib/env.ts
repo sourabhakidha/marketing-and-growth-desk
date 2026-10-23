@@ -18,7 +18,7 @@ export function readServerEnv(source: Record<string, string | undefined> = proce
 export function integrationStatus(source: Record<string, string | undefined> = process.env) {
   return {
     database: readServerEnv(source) ? "configured" : "not_configured",
-    ai: source.OPENAI_API_KEY && source.OPENAI_MODEL ? "configured" : "not_configured",
+    ai: aiConfig(source) ? "configured" : "not_configured",
     reddit: source.REDDIT_CLIENT_ID && source.REDDIT_CLIENT_SECRET ? "configured" : "not_configured",
   } as const;
 }
@@ -28,9 +28,30 @@ export function hasForbiddenServerSecrets(source: Record<string, string | undefi
   return Boolean(source.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-/** OpenAI settings, or null when not configured (the UI then shows "not configured"). */
-export function aiConfig(source: Record<string, string | undefined> = process.env): { apiKey: string; model: string } | null {
-  const apiKey = source.OPENAI_API_KEY?.trim();
-  const model = source.OPENAI_MODEL?.trim();
-  return apiKey && model ? { apiKey, model } : null;
+export type AiProvider = "gemini" | "openai";
+export interface AiConfig { provider: AiProvider; apiKey: string; model: string }
+
+export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+/**
+ * AI provider settings (D-024), or null when not configured (the UI then shows "not configured").
+ * AI_PROVIDER picks the provider; without it, Gemini is used when GEMINI_API_KEY is set, else OpenAI.
+ */
+export function aiConfig(source: Record<string, string | undefined> = process.env): AiConfig | null {
+  const requested = source.AI_PROVIDER?.trim().toLowerCase();
+  const provider: AiProvider | null =
+    requested === "gemini" || requested === "openai" ? requested
+    : requested ? null
+    : source.GEMINI_API_KEY?.trim() ? "gemini" : "openai";
+  if (provider === "gemini") {
+    const apiKey = source.GEMINI_API_KEY?.trim();
+    const model = source.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+    return apiKey ? { provider, apiKey, model } : null;
+  }
+  if (provider === "openai") {
+    const apiKey = source.OPENAI_API_KEY?.trim();
+    const model = source.OPENAI_MODEL?.trim();
+    return apiKey && model ? { provider, apiKey, model } : null;
+  }
+  return null;
 }
