@@ -22,7 +22,7 @@ export function Team() {
       <header className="page-header">
         <h1>Team</h1>
         <p className="muted">
-          Marketing OS members and roles. Admins approve task completion and manage goals. New members are added
+          Marketing Desk members and roles. Admins approve task completion and manage goals. New members are added
           by an admin (see docs/SUPABASE_SETUP.md).
         </p>
       </header>

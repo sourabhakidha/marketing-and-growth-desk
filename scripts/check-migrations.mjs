@@ -18,13 +18,26 @@ export function stripSql(sql) {
     .replace(/'(?:[^']|'')*'/g, "''");
 }
 
+const NOT_ALIASES = new Set(["where", "set", "on", "join", "left", "right", "inner", "order", "group", "for", "limit", "using", "with", "returning", "values", "select", "and", "or", "as"]);
+
+/** Table aliases and row-typed variables declared in the SQL (e.g. `from marketing_os.tasks t`, `t marketing_os.tasks`). */
+export function collectAliases(text) {
+  const out = new Set();
+  const add = (a) => { if (a && !NOT_ALIASES.has(a)) out.add(a); };
+  for (const m of text.matchAll(/\b(?:from|join|update|into)\s+marketing_os(?:_private)?\.[a-z_]+\s+(?:as\s+)?([a-z_][a-z0-9_]*)/g)) add(m[1]);
+  for (const m of text.matchAll(/\)\s*as\s+([a-z_][a-z0-9_]*)\s*\(/g)) add(m[1]);
+  for (const m of text.matchAll(/(?:^|[\s(,])([a-z_][a-z0-9_]*)\s+marketing_os(?:_private)?\.[a-z_]+\s*(?:;|:=|,|\))/gm)) add(m[1]);
+  return out;
+}
+
 export function findViolations(sql) {
   const text = stripSql(sql).toLowerCase();
   const problems = [];
 
+  const aliases = collectAliases(text);
   for (const match of text.matchAll(/\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b/g)) {
     const [full, schema] = match;
-    if (OWN.has(schema) || ALLOWED_QUALIFIED.has(full) || SQL_FUNCS_LIKE_QUALIFIED.has(schema)) continue;
+    if (OWN.has(schema) || ALLOWED_QUALIFIED.has(full) || SQL_FUNCS_LIKE_QUALIFIED.has(schema) || aliases.has(schema)) continue;
     problems.push(`references ${full} (outside marketing_os)`);
   }
 

@@ -24,4 +24,5 @@ export const MODULES: readonly ModuleDef[] = [
 ];
 
 /** Phase currently delivered; modules with a later phase render as "not built yet". */
-export const CURRENT_PHASE = 0;
+export const isBuilt = (m: ModuleDef) => m.phase <= CURRENT_PHASE;
+export const CURRENT_PHASE = 1;

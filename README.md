@@ -1,8 +1,8 @@
-# Akidha Marketing OS
+# Akidha Marketing Desk
 
 Internal marketing & growth platform: Sense → Interpret → Decide → Execute → Learn. Product spec: Project Bible v1.0 and the Team Roles & Workflow Playbook (`docs/source/`).
 
-**Status: Phase 0 (foundation).** Sign-in, membership and roles, controlled vocabularies, the audit log and an app shell are built. The Workspace, Performance Planning, Calendar, Radar, Opportunities, AI Intelligence and Learning Loop modules are placeholders labelled "Not built yet".
+**Status: Phase 1 (Workspace) built.** Sign-in, roles, vocabularies, audit log, and the Workspace — New Activity (Task / Goal), task board, task workflow with hand-offs and approvals, goals with progress, activity log and CSV exports. Performance Planning, Calendar, Radar, Opportunities, AI Intelligence and Learning Loop are labelled "Planned".
 
 ## Quick start
 

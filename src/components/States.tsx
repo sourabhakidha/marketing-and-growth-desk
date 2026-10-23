@@ -18,7 +18,7 @@ export function FullPage({ children }: { children: ReactNode }) {
     <main className="fullpage">
       <div className="fullpage__brand">
         <span className="brand-mark" aria-hidden="true" />
-        Akidha Marketing OS
+        Akidha Marketing Desk
       </div>
       {children}
     </main>

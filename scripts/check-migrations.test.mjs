@@ -31,3 +31,18 @@ describe("migration guard", () => {
     expect(findViolations(ok + "\n-- public.orders\n select 'crm.leads';")).toEqual([]);
   });
 });
+
+describe("migration guard aliases", () => {
+  it("allows table aliases and row variables but still flags other schemas", () => {
+    const sql = `create function marketing_os.f(p uuid) returns void language plpgsql set search_path = '' as $$
+      declare t marketing_os.tasks;
+      begin
+        select * into t from marketing_os.tasks where id = p;
+        update marketing_os.task_stages s set state = 'done' where s.task_id = t.id;
+        perform 1 from public.orders o where o.id = t.id;
+      end $$;`;
+    const problems = findViolations(sql).join();
+    expect(problems).toMatch(/public\.orders/);
+    expect(problems).not.toMatch(/references (t\.id|s\.task_id)/);
+  });
+});

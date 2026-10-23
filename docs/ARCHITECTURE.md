@@ -1,15 +1,15 @@
 # Architecture
 
-Akidha Marketing OS: internal marketing operations platform (Project Bible v1.0). This document describes what is **built** (Phase 0) and the agreed target. Anything not built is labelled as such.
+Akidha Marketing Desk: internal marketing operations platform (Project Bible v1.0). This document describes what is **built** (Phases 0–1) and the agreed target. Anything not built is labelled as such.
 
 ## Components
 
 | Layer | Implementation | Status |
 |---|---|---|
-| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod | Phase 0 shell built |
+| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod | Shell + Workspace (Phase 1) built |
 | Hosting | Netlify (static `dist/` + Functions), deploy previews per PR | Config in `netlify.toml` |
 | Server API | Netlify Functions (TypeScript) under `/api/*` | `/api/health`, `/api/me` |
-| Database | Supabase Postgres, schema `marketing_os` in the shared "Akidha DB" project | Applied 2026-10-24; Data API exposure pending |
+| Database | Supabase Postgres, schema `marketing_os` in the shared "Akidha DB" project | Foundation + Workspace migrations applied; schema exposed |
 | Auth | Username + password (Supabase Auth, internal `.invalid` emails), gated by `marketing_os.members` | Built; 4 accounts created |
 | AI | OpenAI API via server functions only | Phase 4; env vars reserved |
 | Storage | Private bucket `marketing-os` | Phase 1+, not created |
@@ -44,13 +44,34 @@ The "Akidha DB" project hosts ~30 schemas for other apps and a shared `auth.user
    - `scripts/test-db.sh` (CI): applies migrations to a throwaway Postgres, **diffs the catalog outside our schemas before/after** (must be identical) and runs the access tests in `supabase/tests/10_rls.test.sql`.
 9. **Project-wide settings need separate approval.** Exposing `marketing_os` in the Data API (Settings → API → Exposed schemas) is the one project-level change Phase 0 needs. Disabling public sign-ups would affect other apps and is **not** required: membership gates access regardless.
 
-## Data model (Phase 0)
+## Data model
 
 | Table | Purpose |
 |---|---|
 | `members` | Who can use the app and their role (`admin` / `contributor`). Deactivate, never delete. |
 | `vocab_terms` | Controlled vocabularies: task_type, work_origin, task_status, goal_status, priority, workflow_stage, performance_area. |
 | `audit_events` | Append-only history: actor, source (user/system/automation/ai_approved), entity, event, old/new values. |
+| `goals` | Outcome, owner, timeframe, progress method (checklist / accepted deliverables / manual), target, status. Admin-managed. |
+| `tasks` | One unit of work: type, origin, status, priority, owner, reviewer, optional goal (0..1), due date, estimate, brief, completion criteria, deliverable link. `ref` gives the T-number. |
+| `workflow_templates`, `workflow_template_stages` | Reusable stage sequences (12 seeded from Playbook §9), default per task type. |
+| `task_stages` | The task's own workflow instance: stage owner, state, entered / ready / picked-up / completed times, revision count. One active stage at a time. |
+| `task_events` | Append-only task history: hand-offs, pick-ups, returns (with reason), blocks, approvals, reassignment, due-date and priority changes, comments. |
+| `task_contributors` | Optional supporting people on a task. |
+| `goal_progress` (view) | Progress per goal, computed from its declared method. |
+
+### Workflow actions (database functions, called via `supabase.rpc`)
+`task_pick_up`, `task_hand_off`, `task_skip_stage`, `task_return_for_rework`, `task_set_status` (in progress / blocked / cancelled / reopen), `task_submit_for_approval`, `task_decide` (admin approve or request changes), `task_comment`.
+Task status can only change through these functions; each checks membership and permissions and writes a `task_events` row in the same transaction. Direct edits to status, stages or history are rejected by the database.
+
+### Permissions (D-010 – D-012)
+| Action | Admin (Sourabh, Tanvi) | Contributor (Nikita, Saail) |
+|---|---|---|
+| Create task, assign owner at creation | ✓ | ✓ |
+| Edit own task details | ✓ | ✓ (owner or creator) |
+| Reassign / change due date, priority, template | ✓ | ✗ |
+| Pick up, hand off, return, block, submit | ✓ | task owner or current stage owner |
+| Approve completion / request changes / reopen | ✓ | ✗ |
+| Create / manage goals | ✓ | ✗ (view, link tasks) |
 
 Timestamps are stored as `timestamptz` (UTC) and rendered in Asia/Kolkata.
 

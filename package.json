@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Akidha Marketing OS — internal marketing & growth platform",
+  "description": "Akidha Marketing Desk — internal marketing & growth platform",
   "engines": {
     "node": ">=20"
   },

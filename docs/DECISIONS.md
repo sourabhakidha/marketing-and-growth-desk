@@ -1,10 +1,10 @@
 # Decision log
 
-Decisions confirmed by the product owner (Nayan) for Akidha Marketing OS. Each entry: decision, rationale, impact, follow-up. Newest last. Changing a decision means adding a new entry that supersedes the old one, not editing it.
+Decisions confirmed by the product owner (Nayan) for Akidha Marketing Desk (formerly "Marketing OS"). Each entry: decision, rationale, impact, follow-up. Newest last. Changing a decision means adding a new entry that supersedes the old one, not editing it.
 
 | ID | Date | Status |
 |---|---|---|
-| D-001 – D-009 | 2026-10-24 | Confirmed (D-006 superseded by D-008) |
+| D-001 – D-015 | 2026-10-24 | Confirmed (D-006 superseded by D-008; D-005 palette refined by D-014) |
 
 ## D-001 · Repository
 - **Decision:** `marketing-and-growth-desk` (GitHub `sourabhakidha/marketing-and-growth-desk`) is the repository for the platform.
@@ -48,3 +48,29 @@ Decisions confirmed by the product owner (Nayan) for Akidha Marketing OS. Each e
 ## D-009 · Phase 0 applied to production
 - **Decision:** Migration `marketing_os_foundation` applied to "Akidha DB" on 2026-10-24 with the product owner's approval; four accounts created.
 - **Evidence:** Catalog fingerprint of everything outside `marketing_os`/`marketing_os_private` identical before and after (1,729 objects). RLS checks on production: contributor sees team but is not admin; admin is admin; a non-member sees 0 rows; `anon` has no schema access. Security Advisor: no findings for `marketing_os`.
+
+## D-010 · Who creates and assigns tasks
+- **Decision:** Every member can create a task and assign it to anyone. After creation, only admins (Sourabh, Tanvi) can reassign a task or change its due date, priority or workflow template. Owners and creators update the other details of their own tasks.
+- **Enforcement:** database trigger + RLS (not only the UI); every reassignment / due-date / priority change is recorded in task history with the actor.
+- **Resolves:** Q-02 (task part).
+
+## D-011 · Completion approval
+- **Decision:** All tasks need admin approval to become Done. The owner (or current stage owner) submits for approval; an admin approves or requests changes with feedback. Contributors cannot mark Done or reopen an approved task.
+- **Resolves:** Q-03.
+
+## D-012 · Goals
+- **Decision:** Only admins create and manage goals; contributors see goals and link their tasks to them. Each goal declares a progress method: linked-task checklist, accepted-deliverable count (needs a target, counts only approved tasks marked as deliverables), or manually verified.
+- **Resolves:** Q-02 (goal part).
+
+## D-013 · Production/Shoot and Publishing/Scheduling are task types
+- **Decision:** Added task types "Production / Shoot" and "Publishing / Scheduling" (10 task types in total), each with its own default workflow.
+- **Resolves:** Q-04. Supersedes the 8-type list in D-004 for this point.
+
+## D-014 · Name and visual direction
+- **Decision:** The product is called **Akidha Marketing Desk** in the UI and documents. The palette is warm and sober: walnut/umber on warm paper, with muted sage, ochre and brick for states (refines D-005).
+- **Impact:** The database schema keeps its technical name `marketing_os` (renaming it would require changing the exposed-schema setting and every query for no user benefit).
+
+## D-015 · Workspace (Phase 1) applied to production
+- **Decision:** Migration `workspace` applied 2026-10-24: goals, tasks, workflow templates (12), per-task stages, append-only task events, and workflow actions (pick up, hand off, skip, return for rework, block/unblock, cancel/reopen, submit, approve / request changes, comment).
+- **Evidence:** 83 local database tests pass (access + business rules). Catalog fingerprint outside our schemas unchanged (1,729 objects). On production, a rolled-back end-to-end run (contributor creates → picks up → hands off → submits; admin approves) produced the expected statuses and 10 history events; nothing was left behind. `anon` can execute nothing and read nothing.
+- **Advisor note (accepted):** Supabase flags the workflow-action functions as "SECURITY DEFINER callable by signed-in users". This is intentional — they are the only path for status/stage changes and each checks membership and permissions itself; the private helper functions are not exposed through the Data API.

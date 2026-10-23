@@ -17,7 +17,7 @@ export function usernameToLoginEmail(input: string): string | null {
   return isValidUsername(username) ? `${username}@${LOGIN_EMAIL_DOMAIN}` : null;
 }
 
-/** Display name for a signed-in account: the username for Marketing OS logins, otherwise the email. */
+/** Display name for a signed-in account: the username for Marketing Desk logins, otherwise the email. */
 export function accountLabel(email: string | undefined): string | undefined {
   if (!email) return undefined;
   const suffix = `@${LOGIN_EMAIL_DOMAIN}`;

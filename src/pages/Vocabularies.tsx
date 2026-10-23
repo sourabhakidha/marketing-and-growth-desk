@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { describeDbError } from "../lib/session.tsx";
 import { supabase } from "../lib/supabase.ts";
+import { useTemplates } from "../lib/api.ts";
 import { Loading, StatePanel } from "../components/States.tsx";
 
 interface Term { id: string; vocabulary: string; code: string; label: string; sort_order: number; is_active: boolean }
@@ -16,6 +17,7 @@ const TITLES: Record<string, string> = {
 };
 
 export function Vocabularies() {
+  const templates = useTemplates();
   const terms = useQuery({
     queryKey: ["vocab_terms"],
     queryFn: async () => {
@@ -38,7 +40,7 @@ export function Vocabularies() {
         <h1>Vocabularies</h1>
         <p className="muted">
           Controlled values used across modules. Task type, work origin, status, stage and priority are separate
-          fields and are never combined. Seeded from the Team Roles &amp; Workflow Playbook (decision D-004).
+          fields and are never combined. Seeded from the Team Roles &amp; Workflow Playbook (decisions D-004, D-013).
         </p>
       </header>
       {terms.isPending && <Loading />}
@@ -57,6 +59,26 @@ export function Vocabularies() {
           </section>
         ))}
       </div>
+
+      <h2 className="section-title">Workflow templates</h2>
+      <p className="muted small">Starting paths for each kind of work (Playbook §9). Each task gets its own copy; optional stages can be skipped.</p>
+      <div className="vocab-grid">
+        {(templates.data ?? []).map((t) => (
+          <section key={t.id} className="card">
+            <h3>{t.name}</h3>
+            {t.default_for_task_type && <p className="muted small">Default for {labelOf(t.default_for_task_type, "task_type")}</p>}
+            <ol>
+              {t.workflow_template_stages.map((s) => (
+                <li key={s.id}>{labelOf(s.stage_code, "workflow_stage")}{s.is_optional && <span className="muted"> (optional)</span>}</li>
+              ))}
+            </ol>
+          </section>
+        ))}
+      </div>
     </>
   );
+
+  function labelOf(code: string, vocabulary: string) {
+    return terms.data?.find((x) => x.vocabulary === vocabulary && x.code === code)?.label ?? code;
+  }
 }

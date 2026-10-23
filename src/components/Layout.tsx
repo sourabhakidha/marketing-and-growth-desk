@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router";
+import { Link, NavLink, Outlet } from "react-router";
 import { MODULES } from "../lib/modules.ts";
 import { useMember } from "../lib/session.tsx";
 import { supabase } from "../lib/supabase.ts";
@@ -8,10 +8,10 @@ export function Layout() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <NavLink to="/" className="sidebar__brand" end>
+        <Link to="/" className="sidebar__brand">
           <span className="brand-mark" aria-hidden="true" />
-          <span>Marketing OS</span>
-        </NavLink>
+          <span>Marketing Desk</span>
+        </Link>
         <nav aria-label="Modules">
           <NavLink to="/" end>Overview</NavLink>
           {MODULES.map((m) => (

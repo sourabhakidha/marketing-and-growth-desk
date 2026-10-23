@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabase.ts";
 import { FullPage, Loading, StatePanel } from "./States.tsx";
 import { accountLabel } from "../lib/username.ts";
 
-/** Only active Marketing OS members get past this point. RLS enforces the same rule server-side. */
+/** Only active Marketing Desk members get past this point. RLS enforces the same rule server-side. */
 export function RequireMember() {
   const access = useAccess();
   const location = useLocation();
@@ -32,10 +32,10 @@ export function RequireMember() {
     case "no_access":
       return (
         <FullPage>
-          <StatePanel title={access.reason === "inactive" ? "Access disabled" : "No access to Marketing OS"} tone="warning">
+          <StatePanel title={access.reason === "inactive" ? "Access disabled" : "No access to Marketing Desk"} tone="warning">
             <p>
               You are signed in{access.email ? ` as ${accountLabel(access.email)}` : ""}, but this account
-              {access.reason === "inactive" ? " has been deactivated" : " is not a Marketing OS member"}.
+              {access.reason === "inactive" ? " has been deactivated" : " is not a Marketing Desk member"}.
               Ask Sourabh or Tanvi to add you.
             </p>
             <button type="button" className="button" onClick={() => supabase?.auth.signOut()}>Sign out</button>
