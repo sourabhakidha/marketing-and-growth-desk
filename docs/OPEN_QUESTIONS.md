@@ -25,4 +25,6 @@ Items not yet decided. Needed-by = the phase that cannot start without the answe
 | Q-20 | Should contributors be able to add or edit workflow templates, or admins only (current: admins only, no editing UI yet)? | Phase 1 polish | Bible §15.1 |
 | Q-21 | Task-to-multiple-assets: keep one task per asset for now, or add batch size? (Playbook §10 "a batch can be one parent task with a batch size") | Phase 1 polish | Playbook §10 |
 | Q-22 | Performance Planning (deferred, D-016): targets, actuals source and cadence. | Later | D-016 |
+| Q-23 | Task dependencies (Bible §6.5, Playbook §11): link a task to the upstream tasks/inputs it waits on and show them on blocked work. Deferred — blocked tasks currently show the recorded reason only. | Later | D-026 |
+| Q-24 | Update the AI-Ready Brand Guidelines document to the confirmed colour values (D-025). | Brand owner | D-025 |
 | Q-19 | Pre-existing exposure: ~21 tables in `public` readable by `anon` without RLS (other apps). Owner to decide whether to fix (outside this repo's scope). | Owner decision | Supabase inspection |

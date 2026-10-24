@@ -93,13 +93,15 @@ export function useLookups() {
 }
 
 // ---------------------------------------------------------------- tasks
-export interface TaskWithStage extends Task { task_stages: Pick<TaskStage, "id" | "stage_code" | "state" | "owner_id" | "picked_up_at" | "ready_at">[] }
+export interface TaskWithStage extends Task {
+  task_stages: Pick<TaskStage, "id" | "position" | "stage_code" | "is_optional" | "state" | "owner_id" | "picked_up_at" | "ready_at" | "revision_count">[];
+}
 
 export function useTasks() {
   return useQuery({
     queryKey: ["tasks"],
     queryFn: () => run<TaskWithStage[]>(db().from("tasks")
-      .select("*, task_stages(id, stage_code, state, owner_id, picked_up_at, ready_at)")
+      .select("*, task_stages(id, position, stage_code, is_optional, state, owner_id, picked_up_at, ready_at, revision_count)")
       .order("ref", { ascending: false })),
   });
 }

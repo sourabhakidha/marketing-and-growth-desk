@@ -15,7 +15,7 @@ function addDays(iso: string, days: number) {
 interface Item { key: string; href: string; ref: string; title: string; meta: string }
 interface Group { title: string; empty: string; items: Item[]; more?: string }
 
-const taskItem = (t: TaskWithStage, meta: string): Item => ({ key: t.id, href: `/workspace/tasks/${t.ref}`, ref: taskRef(t.ref), title: t.title, meta });
+const taskItem = (t: TaskWithStage, meta: string): Item => ({ key: t.id, href: `/workspace?task=${t.ref}`, ref: taskRef(t.ref), title: t.title, meta });
 
 export function Overview() {
   const { member } = useMember();

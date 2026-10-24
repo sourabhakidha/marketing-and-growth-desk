@@ -210,6 +210,19 @@ function geminiLegacySchema(node: unknown): unknown {
   return out;
 }
 
+/**
+ * Accepts what people paste from AI Studio: "gemini-2.5-flash", "models/gemini-2.5-flash",
+ * or a display name like "Gemini 2.5 Flash". Returns the bare model ID.
+ */
+export function normalizeGeminiModel(input: string): string {
+  const id = input.trim().replace(/^["'`]+|["'`]+$/g, "").replace(/^models\//i, "").trim()
+    .toLowerCase().replace(/\s+/g, "-");
+  if (!/^[a-z0-9][a-z0-9.\-]*$/.test(id)) {
+    throw new Error(`GEMINI_MODEL "${input}" is not a valid model ID. Use the ID from AI Studio, e.g. gemini-2.5-flash.`);
+  }
+  return id;
+}
+
 /** Google Gemini (AI Studio key). System message becomes systemInstruction; output is forced to JSON matching DRAFT_SCHEMA. */
 export async function callGemini(
   messages: { role: string; content: string }[],
@@ -219,7 +232,8 @@ export async function callGemini(
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
   const contents = messages.filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}:generateContent`;
+  const model = normalizeGeminiModel(opts.model);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const attempt = async (schemaField: "responseJsonSchema" | "responseSchema") => {
     const ctrl = new AbortController();
@@ -276,7 +290,7 @@ export async function callGemini(
   }
   return {
     output: normalizeDraft(parsed),
-    model: body.modelVersion ?? opts.model,
+    model: body.modelVersion ?? model,
     promptTokens: body.usageMetadata?.promptTokenCount ?? null,
     completionTokens: body.usageMetadata?.candidatesTokenCount ?? null,
   };

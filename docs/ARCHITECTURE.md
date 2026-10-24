@@ -6,7 +6,7 @@ Akidha Marketing Desk: internal marketing operations platform (Project Bible v1.
 
 | Layer | Implementation | Status |
 |---|---|---|
-| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod | All modules except Performance Planning built |
+| Frontend | Vite + React 19 + TypeScript SPA, React Router 7, TanStack Query, Zod; brand palette + Poppins (D-025); Workspace pipeline (D-026) | All modules except Performance Planning built |
 | Hosting | Netlify (static `dist/` + Functions), deploy previews per PR | Config in `netlify.toml` |
 | Server API | Netlify Functions (TypeScript) under `/api/*` | `/api/health`, `/api/me`, `/api/radar-scan` and `/api/ai-draft` (background, up to 15 min) |
 | Database | Supabase Postgres, schema `marketing_os` in the shared "Akidha DB" project | Foundation + Workspace migrations applied; schema exposed |

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
+import { matchesFilters, useTaskFilters } from "../workspace/filters.ts";
 import { type Goal, type Task, useGoals, useLookups, useTasks, useUpdateTask } from "../lib/api.ts";
 import { formatDate, goalRef, isOverdue, taskRef, todayInIndia } from "../lib/format.ts";
 import { useMember } from "../lib/session.tsx";
@@ -54,8 +55,11 @@ function monthGrid(year: number, month: number): string[] {
   return Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setUTCDate(start.getUTCDate() + i); return iso(d); });
 }
 
-export function Calendar() {
+/** Standalone page, or embedded in the Workspace where the shared filters apply and tasks open in the side panel. */
+export function Calendar({ embedded = false }: { embedded?: boolean } = {}) {
   const tasks = useTasks();
+  const shared = useTaskFilters();
+  const [params] = useSearchParams();
   const goals = useGoals();
   const { members, memberName, options, ready } = useLookups();
   const { member: me } = useMember();
@@ -69,10 +73,17 @@ export function Calendar() {
   const [showClosed, setShowClosed] = useState(false);
   const [editing, setEditing] = useState<CalEntry | null>(null);
 
-  const entries = useMemo(() => buildEntries(tasks.data ?? [], goals.data ?? [], showClosed)
+  const scopedTasks = useMemo(() => (embedded
+    ? (tasks.data ?? []).filter((t) => matchesFilters(t, shared.f, { meId: me.id, today }))
+    : (tasks.data ?? [])), [embedded, tasks.data, shared.f, me.id, today]);
+  const scopedGoals = useMemo(() => (embedded
+    ? (goals.data ?? []).filter((g) => (!shared.f.goal || shared.f.goal === g.id) && shared.f.goal !== "none" && (!shared.f.owner || g.owner_id === shared.f.owner)
+        && !shared.f.type && !shared.f.priority && !shared.f.q && !shared.f.due && !shared.f.mine)
+    : (goals.data ?? [])), [embedded, goals.data, shared.f]);
+  const entries = useMemo(() => buildEntries(scopedTasks, scopedGoals, showClosed)
     .filter((e) => kinds[e.kind])
     .filter((e) => !owner || e.ownerId === owner)
-    .filter((e) => !type || (e.task && e.task.task_type === type)), [tasks.data, goals.data, showClosed, kinds, owner, type]);
+    .filter((e) => !type || (e.task && e.task.task_type === type)), [scopedTasks, scopedGoals, showClosed, kinds, owner, type]);
   const heavy = useMemo(() => overloads(entries), [entries]);
   const byDay = useMemo(() => {
     const m = new Map<string, CalEntry[]>();
@@ -88,21 +99,29 @@ export function Calendar() {
   const monthPrefix = `${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`;
   const move = (delta: number) => setCursor((c) => { const d = new Date(Date.UTC(c.y, c.m + delta, 1)); return { y: d.getUTCFullYear(), m: d.getUTCMonth() }; });
   const agenda = entries.filter((e) => e.date >= today).slice(0, 120);
+  const hrefFor = (e: CalEntry) => {
+    if (!embedded || !e.task) return e.href;
+    const n = new URLSearchParams(params);
+    n.set("task", String(e.task.ref));
+    n.delete("action");
+    return `?${n.toString()}`;
+  };
 
   return (
     <>
-      <header className="page-header page-header--row">
+      {!embedded && <header className="page-header page-header--row">
         <div>
           <h1>Calendar</h1>
           <p className="muted">Due dates, publish dates and goal timeframes, taken straight from the task and goal records. Changing a date here changes the record.</p>
         </div>
-      </header>
+      </header>}
 
       <div className="filters">
         <div className="segmented" role="radiogroup" aria-label="View">
           <button type="button" role="radio" aria-checked={view === "month"} className={view === "month" ? "is-on" : ""} onClick={() => setView("month")}>Month</button>
           <button type="button" role="radio" aria-checked={view === "agenda"} className={view === "agenda" ? "is-on" : ""} onClick={() => setView("agenda")}>Upcoming</button>
         </div>
+        {!embedded && <>
         <select value={owner} onChange={(e) => setOwner(e.target.value)} aria-label="Owner">
           <option value="">Everyone</option>
           {(members.data ?? []).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
@@ -111,6 +130,7 @@ export function Calendar() {
           <option value="">All task types</option>
           {options("task_type").map((o) => <option key={o.code} value={o.code}>{o.label}</option>)}
         </select>
+        </>}
         {(Object.keys(KIND_LABEL) as EntryKind[]).map((k) => (
           <label key={k} className="check"><input type="checkbox" checked={kinds[k]} onChange={(e) => setKinds((p) => ({ ...p, [k]: e.target.checked }))} /> {KIND_LABEL[k]}</label>
         ))}
@@ -135,7 +155,7 @@ export function Calendar() {
                   <div className="cal__date">{Number(d.slice(8))}
                     {overload && <span className="tag tag--warn" title={`${overload.map(memberName).join(", ")}: ${OVERLOAD}+ tasks due`}>load</span>}
                   </div>
-                  {items.slice(0, 4).map((e) => <EntryPill key={e.key} e={e} today={today} onEdit={isAdmin && e.task ? () => setEditing(e) : undefined} />)}
+                  {items.slice(0, 4).map((e) => <EntryPill key={e.key} e={e} href={hrefFor(e)} today={today} onEdit={isAdmin && e.task ? () => setEditing(e) : undefined} />)}
                   {items.length > 4 && <button type="button" className="link small" onClick={() => setView("agenda")}>+{items.length - 4} more</button>}
                 </div>
               );
@@ -152,7 +172,7 @@ export function Calendar() {
                   {(i === 0 || agenda[i - 1]!.date !== e.date) && <h3 className="agenda__date">{formatDate(e.date)}{e.date === today && " · Today"}</h3>}
                   <div className="agenda__row">
                     <span className={`kind kind--${e.kind}`}>{KIND_LABEL[e.kind]}</span>
-                    <Link to={e.href}><span className="ref">{e.ref}</span> {e.title}</Link>
+                    <Link to={hrefFor(e)}><span className="ref">{e.ref}</span> {e.title}</Link>
                     <span className="muted small">{memberName(e.ownerId)}</span>
                     {isAdmin && e.task && <button type="button" className="link small" onClick={() => setEditing(e)}>Reschedule</button>}
                   </div>
@@ -168,11 +188,11 @@ export function Calendar() {
   );
 }
 
-function EntryPill({ e, today, onEdit }: { e: CalEntry; today: string; onEdit?: () => void }) {
+function EntryPill({ e, href, today, onEdit }: { e: CalEntry; href: string; today: string; onEdit?: () => void }) {
   const late = e.kind === "due" && isOverdue(e.date, e.status, today);
   return (
     <div className={`pill-entry kind--${e.kind}${late ? " pill-entry--late" : ""}${e.status === "done" || e.status === "cancelled" ? " pill-entry--closed" : ""}`}>
-      <Link to={e.href} title={`${KIND_LABEL[e.kind]}: ${e.title}`}><strong>{KIND_LABEL[e.kind]}</strong> {e.title}</Link>
+      <Link to={href} title={`${KIND_LABEL[e.kind]}: ${e.title}`}><strong>{KIND_LABEL[e.kind]}</strong> {e.title}</Link>
       {onEdit && <button type="button" className="icon-button icon-button--tiny" aria-label={`Reschedule ${e.title}`} onClick={onEdit}>✎</button>}
     </div>
   );

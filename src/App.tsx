@@ -13,6 +13,8 @@ import { ActivityLog } from "./workspace/ActivityLog.tsx";
 import { Exports } from "./workspace/Exports.tsx";
 import { Goals } from "./workspace/Goals.tsx";
 import { TaskBoard } from "./workspace/TaskBoard.tsx";
+import { Pipeline } from "./workspace/Pipeline.tsx";
+import { TaskList } from "./workspace/TaskList.tsx";
 import { TaskDetail } from "./workspace/TaskDetail.tsx";
 import { Workspace } from "./workspace/Workspace.tsx";
 import { Calendar } from "./modules/Calendar.tsx";
@@ -34,7 +36,10 @@ const router = createBrowserRouter([
             path: "/workspace",
             element: <Workspace />,
             children: [
-              { index: true, element: <TaskBoard /> },
+              { index: true, element: <Pipeline /> },
+              { path: "board", element: <TaskBoard /> },
+              { path: "list", element: <TaskList /> },
+              { path: "calendar", element: <Calendar embedded /> },
               { path: "goals", element: <Goals /> },
               { path: "activity", element: <ActivityLog /> },
               { path: "exports", element: <Exports /> },

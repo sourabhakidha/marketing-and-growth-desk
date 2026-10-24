@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { type TaskEvent, type TaskStage, useDrafts, useGoals, useLookups, useOpportunities, useTask, useUpdateTask, useWorkflowAction, type WorkflowAction } from "../lib/api.ts";
 import { DRAFT_STATUS_LABEL } from "../lib/labels.ts";
@@ -17,6 +17,21 @@ type Dialog =
 
 export function TaskDetail() {
   const ref = Number(useParams().ref);
+  return <TaskPanel taskNumber={ref} variant="page" />;
+}
+
+/**
+ * One task: brief, deliverables, people, workflow, history and every action.
+ * Used as a full page and inside the Workspace side panel; both call the same
+ * database actions, which enforce the workflow and permissions.
+ */
+export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionConsumed, onClose }: {
+  taskNumber: number;
+  variant: "page" | "drawer";
+  initialAction?: string | null;
+  onActionConsumed?: () => void;
+  onClose?: () => void;
+}) {
   const q = useTask(ref);
   const goals = useGoals();
   const opps = useOpportunities();
@@ -31,10 +46,24 @@ export function TaskDetail() {
   const [returnTo, setReturnTo] = useState("");
   const [comment, setComment] = useState("");
 
+  useEffect(() => {
+    if (!initialAction || !q.data) return;
+    const st = q.data.stages;
+    const cur = st.find((s) => s.state === "active") ?? null;
+    const nxt = cur ? st.find((s) => s.state === "pending" && s.position > cur.position) : undefined;
+    if (initialAction === "hand_off" && nxt) {
+      action.reset();
+      setNote("");
+      setNextOwner(q.data.task.owner_id);
+      setDialog("hand_off");
+    }
+    onActionConsumed?.();
+  }, [initialAction, q.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!Number.isFinite(ref)) return <StatePanel title="Task not found" />;
   if (q.isPending || !ready) return <Loading />;
   if (q.isError) return <StatePanel title="Could not load task" tone="error"><p>{q.error.message}</p></StatePanel>;
-  if (!q.data) return <StatePanel title="Task not found"><p><Link to="/workspace">Back to the board</Link></p></StatePanel>;
+  if (!q.data) return <StatePanel title="Task not found"><p><Link to="/workspace">Back to the Workspace</Link></p></StatePanel>;
 
   const { task, stages, events } = q.data;
   const isAdmin = me.role === "admin";
@@ -50,6 +79,8 @@ export function TaskDetail() {
   const opp = opps.data?.find((o) => o.id === task.opportunity_id);
   const taskDrafts = (drafts.data ?? []).filter((d) => d.task_id === task.id);
   const activeMembers = (members.data ?? []).filter((m) => m.is_active);
+  const lastBlock = task.status === "blocked" ? events.find((e) => e.event_type === "blocked" || (e.event_type === "status_changed" && e.to_value === "blocked")) : undefined;
+  const drawer = variant === "drawer";
 
   function open(d: Dialog) {
     action.reset();
@@ -62,11 +93,17 @@ export function TaskDetail() {
   const id = task.id;
 
   return (
-    <article className="task-detail">
-      <p className="crumbs"><Link to="/workspace">Workspace</Link> / {taskRef(task.ref)}</p>
+    <article className={`task-detail${drawer ? " task-detail--drawer" : ""}`}>
+      {drawer ? (
+        <div className="drawer__top">
+          <span className="ref">{taskRef(task.ref)}</span>
+          <Link className="link small" to={`/workspace/tasks/${task.ref}`}>Open full page</Link>
+          {onClose && <button type="button" className="icon-button" aria-label="Close task panel" onClick={onClose}>×</button>}
+        </div>
+      ) : <p className="crumbs"><Link to="/workspace">Workspace</Link> / {taskRef(task.ref)}</p>}
       <header className="task-detail__header">
         <div>
-          <h1>{task.title}</h1>
+          {drawer ? <h2 className="drawer__title">{task.title}</h2> : <h1>{task.title}</h1>}
           <div className="chips">
             <StatusBadge code={task.status} label={label("task_status", task.status)} />
             {current && <span className="chip">Stage: {label("workflow_stage", current.stage_code)}</span>}
@@ -81,7 +118,12 @@ export function TaskDetail() {
         </div>
       </header>
 
-      {task.status === "blocked" && <div className="state state--error"><strong>Blocked:</strong> {task.blocker_reason}</div>}
+      {task.status === "blocked" && (
+        <div className="state state--error">
+          <strong>Blocked:</strong> {task.blocker_reason ?? "No reason recorded."}
+          {lastBlock && <span className="small muted"> — raised by {lastBlock.actor_id ? memberName(lastBlock.actor_id) : "System"}, {formatDateTime(lastBlock.occurred_at)}</span>}
+        </div>
+      )}
       {task.status === "in_review" && (
         <div className="state state--warning">{isAdmin ? "Waiting for your approval." : "Submitted — waiting for Sourabh or Tanvi to approve."}</div>
       )}
