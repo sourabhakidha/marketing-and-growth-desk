@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildMessages, callOpenAI, retrievalQuery, reviewFlags, type DraftOutput } from "./ai.ts";
-import { callModel, normalizeDraft } from "./ai.ts";
+import { callModel, normalizeDraft, normalizeGeminiModel } from "./ai.ts";
 
 const out: DraftOutput = {
   working_title: "t", objective: "o", audience: "a", language: "Hinglish", format_and_duration: "Reel 45s", core_message: "m",
@@ -108,5 +108,17 @@ describe("gemini provider", () => {
     expect(n.hook_options).toEqual(["one hook"]);
     expect(n.structure).toEqual([{ beat: "", content: "just text" }]);
     expect(n.claims_requiring_review).toEqual([]);
+  });
+});
+
+describe("gemini model name", () => {
+  it("accepts IDs, models/ prefix and display names", () => {
+    expect(normalizeGeminiModel("gemini-2.5-flash")).toBe("gemini-2.5-flash");
+    expect(normalizeGeminiModel(" models/gemini-2.5-flash ")).toBe("gemini-2.5-flash");
+    expect(normalizeGeminiModel("Gemini 2.5 Flash")).toBe("gemini-2.5-flash");
+    expect(normalizeGeminiModel('"gemini-2.5-flash"')).toBe("gemini-2.5-flash");
+  });
+  it("rejects junk with a clear message", () => {
+    expect(() => normalizeGeminiModel("gemini/2.5?flash")).toThrow(/not a valid model ID/);
   });
 });
