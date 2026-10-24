@@ -2,10 +2,10 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, NavLink, Outlet } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  client, type Learning, run, type TaskEvent, type TaskStage, useAllStages, useAllTaskEvents, useGoals, useLearnings, useLookups,
+  client, type Learning, run, type TaskEvent, useAllTaskEvents, useGoals, useLearnings, useLookups,
   useOpportunities, useTasks,
 } from "../lib/api.ts";
-import { formatDate, formatDateTime, formatDuration, goalRef, minutesBetween, taskRef } from "../lib/format.ts";
+import { formatDate, formatDateTime, goalRef, taskRef } from "../lib/format.ts";
 import { LEARNING_CLASS_LABEL, LEARNING_STATUS_LABEL } from "../lib/labels.ts";
 import { useMember } from "../lib/session.tsx";
 import { Chip } from "../components/Tone.tsx";
@@ -226,40 +226,9 @@ function LearningForm({ initial, id, onClose, onSaved }: { initial: Values; id?:
 }
 
 // ---------------------------------------------------------------- process insights
-export interface StageStat { stage: string; completed: number; waits: number[]; times: number[]; revisions: number; total: number }
-
-export function median(values: number[]): number | null {
-  if (!values.length) return null;
-  const s = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid]! : Math.round((s[mid - 1]! + s[mid]!) / 2);
-}
-
-/** Per-stage durations from recorded timestamps only; missing timestamps are counted as not tracked. */
-export function stageStats(stages: TaskStage[]): StageStat[] {
-  const by = new Map<string, StageStat>();
-  for (const s of stages) {
-    if (s.state === "pending" || s.state === "skipped") continue;
-    const st = by.get(s.stage_code) ?? { stage: s.stage_code, completed: 0, waits: [], times: [], revisions: 0, total: 0 };
-    st.total += 1;
-    st.revisions += s.revision_count;
-    const wait = minutesBetween(s.ready_at, s.picked_up_at);
-    if (wait != null) st.waits.push(wait);
-    if (s.state === "done") {
-      st.completed += 1;
-      const t = minutesBetween(s.entered_at, s.completed_at);
-      if (t != null) st.times.push(t);
-    }
-    by.set(s.stage_code, st);
-  }
-  return [...by.values()].sort((a, b) => (median(b.waits) ?? -1) - (median(a.waits) ?? -1));
-}
-
 export function ProcessInsights() {
-  const stages = useAllStages();
   const events = useAllTaskEvents(2000);
   const { label } = useLookups();
-  const stats = useMemo(() => stageStats(stages.data ?? []), [stages.data]);
   const decisions = useMemo(() => {
     const ev = (events.data ?? []) as TaskEvent[];
     return {
@@ -270,30 +239,18 @@ export function ProcessInsights() {
     };
   }, [events.data]);
 
-  if (stages.isPending || events.isPending) return <Loading />;
-  if (!stats.length) return <StatePanel title="Not enough workflow history yet"><p>Insights appear once tasks have moved through stages. Nothing before the tracker started is reconstructed.</p></StatePanel>;
+  if (events.isPending) return <Loading />;
 
   return (
     <>
-      <p className="muted small">Medians from recorded timestamps. “Wait” = hand-off to pick-up; “stage time” = stage start to completion (includes waiting). Small samples are shown with their size — treat them as prompts to look, not conclusions.</p>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th>Stage</th><th>Times used</th><th>Median wait</th><th>Wait sample</th><th>Median stage time</th><th>Completed</th><th>Rework returns</th></tr></thead>
-          <tbody>
-            {stats.map((s) => (
-              <tr key={s.stage}>
-                <td>{label("workflow_stage", s.stage)}</td>
-                <td>{s.total}</td>
-                <td><strong>{formatDuration(median(s.waits))}</strong></td>
-                <td className="small muted">n={s.waits.length}</td>
-                <td>{formatDuration(median(s.times))}</td>
-                <td>{s.completed}</td>
-                <td>{s.revisions || "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <section className="card">
+        <h2>Stage times, waits and lags</h2>
+        <p className="small muted">
+          Wait before pick-up, stage time and hand-off lags (by stage, task type and goal, from idea to done) are in the
+          Workspace <strong>Flow</strong> view, using the same recorded timestamps.
+        </p>
+        <Link className="button" to="/workspace/flow">Open Flow</Link>
+      </section>
       <div className="attention-grid section-title">
         <section className="card">
           <h2>Approval outcomes</h2>

@@ -9,8 +9,9 @@ const VIEWS = [
   { to: "/workspace/board", label: "Status board", end: false },
   { to: "/workspace/list", label: "List", end: false },
   { to: "/workspace/calendar", label: "Calendar", end: false },
+  { to: "/workspace/flow", label: "Flow", end: false },
 ];
-const WORK_PATHS = new Set(["/workspace", "/workspace/", "/workspace/board", "/workspace/list", "/workspace/calendar"]);
+const WORK_PATHS = new Set(["/workspace", "/workspace/", "/workspace/board", "/workspace/list", "/workspace/calendar", "/workspace/flow"]);
 
 export function Workspace() {
   const { pathname, search } = useLocation();

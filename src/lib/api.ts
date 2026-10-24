@@ -280,6 +280,14 @@ export interface Opportunity {
 export function useOpportunities() {
   return useQuery({ queryKey: ["opportunities"], queryFn: () => run<Opportunity[]>(db().from("opportunities").select("*").order("ref", { ascending: false })) });
 }
+export interface OpportunitySignalLink { opportunity_id: string; signal_id: string; linked_at: string; radar_signals: { collected_at: string } | null }
+export function useOpportunitySignalLinks() {
+  return useQuery({
+    queryKey: ["opportunity_signal_links"],
+    queryFn: () => run<OpportunitySignalLink[]>(db().from("opportunity_signals").select("opportunity_id, signal_id, linked_at, radar_signals(collected_at)") as unknown as
+      PromiseLike<{ data: OpportunitySignalLink[] | null; error: { message: string } | null }>),
+  });
+}
 export function useOpportunity(ref: number) {
   return useQuery({
     queryKey: ["opportunity", ref],

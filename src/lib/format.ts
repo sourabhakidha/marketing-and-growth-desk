@@ -31,6 +31,14 @@ export function minutesBetween(from: string | null | undefined, to: string | nul
   return Number.isFinite(ms) && ms >= 0 ? Math.round(ms / 60000) : null;
 }
 
+/** Median of recorded values; null (not zero) when there are none. */
+export function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid]! : Math.round((s[mid - 1]! + s[mid]!) / 2);
+}
+
 export function formatDuration(minutes: number | null | undefined): string {
   if (minutes == null) return "not tracked";
   if (minutes < 60) return `${minutes} min`;
