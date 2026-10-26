@@ -3,8 +3,9 @@ import { Link } from "react-router";
 import {
   useAllStages, useAllTaskEvents, useGoals, useLookups, useOpportunities, useOpportunitySignalLinks, useTasks, useTemplates,
 } from "../lib/api.ts";
-import { formatDuration, goalRef, median, todayInIndia } from "../lib/format.ts";
+import {formatDuration, median, todayInIndia} from "../lib/format.ts";
 import { useMember } from "../lib/session.tsx";
+import { useScope } from "../lib/scope.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
 import { matchesFilters, useTaskFilters } from "./filters.ts";
 import { eventsByTask, flowByGoal, flowByType, ideaToExecution, slowestStage, stagesByTask, type StageCell } from "./flow.ts";
@@ -30,13 +31,14 @@ export function Flow() {
   const links = useOpportunitySignalLinks();
   const { label, options, ready } = useLookups();
   const { member: me } = useMember();
+  const { scope } = useScope();
   const { f } = useTaskFilters();
   const [metric, setMetric] = useState<Metric>("totals");
   const today = todayInIndia();
 
   const model = useMemo(() => {
     if (!tasks.data || !stages.data || !events.data || !templates.data || !goals.data || !opps.data || !links.data) return null;
-    const visible = tasks.data.filter((t) => matchesFilters(t, f, { meId: me.id, today }));
+    const visible = tasks.data.filter((t) => t.kind !== "deliverable" && matchesFilters(t, f, { meId: me.id, today, scope, all: tasks.data }));
     const ids = new Set(visible.map((t) => t.id));
     const byTask = stagesByTask(stages.data.filter((s) => ids.has(s.task_id)));
     const evByTask = eventsByTask(events.data.filter((e) => ids.has(e.task_id)));
@@ -46,9 +48,9 @@ export function Flow() {
     const usedStages = [...stageCodes, ...new Set(types.flatMap((r) => [...r.cells.keys()]).filter((c) => !stageCodes.includes(c)))]
       .filter((c) => types.some((r) => r.cells.get(c)?.inWorkflow));
     const goalRows = flowByGoal(f.goal && f.goal !== "none" ? goals.data.filter((g) => g.id === f.goal) : goals.data, visible, byTask, new Date().toISOString());
-    const idea = ideaToExecution({ opportunities: opps.data, links: links.data, tasks: visible, stages: byTask, events: evByTask });
+    const idea = ideaToExecution({ opportunities: scope === "me" ? opps.data.filter((o) => o.created_by === me.id || o.decided_by === me.id) : opps.data, links: links.data, tasks: visible, stages: byTask, events: evByTask });
     return { visible, types, usedStages, goalRows, idea };
-  }, [tasks.data, stages.data, events.data, templates.data, goals.data, opps.data, links.data, f, me.id, today, options]);
+  }, [tasks.data, stages.data, events.data, templates.data, goals.data, opps.data, links.data, f, me.id, today, scope, options]);
 
   const failed = [tasks, stages, events, templates, goals, opps, links].find((q) => q.isError);
   if (failed) return <StatePanel title="Could not load flow data" tone="error"><p>{failed.error?.message}</p></StatePanel>;
@@ -106,7 +108,7 @@ export function Flow() {
               const slow = slowestStage(r);
               return (
                 <tr key={r.type}>
-                  <td><Link to={`/workspace?type=${r.type}&status=all`}>{label("task_type", r.type)}</Link></td>
+                  <td><Link to={`/workspace/list?type=${r.type}&status=all`}>{label("task_type", r.type)}</Link></td>
                   <td className="small">{r.template?.name ?? <span className="muted">none</span>}</td>
                   <td>{r.open}</td>
                   <td>{r.done}</td>
@@ -168,7 +170,7 @@ export function Flow() {
               <p className="small muted flow-map__goals">
                 Goals:{" "}
                 {goalsHere.length === 0 ? "none linked" : goalsHere.map(({ g, n }, i) => (
-                  <span key={g.goal.id}>{i > 0 && ", "}<Link to={`/workspace?goal=${g.goal.id}&status=all`}>{goalRef(g.goal.ref)} {g.goal.title}</Link> ({n})</span>
+                  <span key={g.goal.id}>{i > 0 && ", "}<Link to={`/workspace/goals?goal=${g.goal.id}&status=all`}>{g.goal.title}</Link> ({n})</span>
                 ))}
               </p>
             </section>
@@ -184,7 +186,7 @@ export function Flow() {
             <tbody>
               {goalRows.map((g) => (
                 <tr key={g.goal.id}>
-                  <td className="wrap"><Link to={`/workspace?goal=${g.goal.id}&status=all`}>{goalRef(g.goal.ref)} · {g.goal.title}</Link></td>
+                  <td className="wrap"><Link to={`/workspace/goals?goal=${g.goal.id}&status=all`}>{g.goal.title}</Link></td>
                   <td className="wrap small">{g.byType.size === 0 ? <span className="muted">no tasks</span> : [...g.byType].map(([t, n]) => `${label("task_type", t)} ×${n}`).join(", ")}</td>
                   <td>{g.open}</td>
                   <td>{g.done}</td>

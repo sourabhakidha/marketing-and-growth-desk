@@ -5,17 +5,24 @@ import {
   callApi, client, type RadarSignal, type RadarSource, run, useHealth, useLatestScan, useLookups, useRadarSources, useSignals,
 } from "../lib/api.ts";
 import { formatDateTime } from "../lib/format.ts";
+import { signalTable } from "../lib/exportRows.ts";
+import { DateRangePicker, ExportCsvButton, useDateRange } from "../components/DateRange.tsx";
 import { EVIDENCE_LABEL, SIGNAL_STATUS_LABEL, SOURCE_KIND_LABEL, SOURCE_STATUS_LABEL, TOPIC_LABEL } from "../lib/labels.ts";
 import { useMember } from "../lib/session.tsx";
+import { useScope } from "../lib/scope.tsx";
 import { Chip } from "../components/Tone.tsx";
 import { ErrorText, Field, orNull } from "../components/Form.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
 
-const PERIODS: Record<string, number | null> = { "7": 7, "30": 30, all: null };
+const SIGNAL_DATE_BASES = [
+  { value: "collected_at", label: "Collected in period" },
+  { value: "published_at", label: "Published in period" },
+];
 
 export function Radar() {
-  const signals = useSignals();
+  const dates = useDateRange({ bases: SIGNAL_DATE_BASES, defaultPreset: "last_30" });
+  const signals = useSignals(400, dates.range, dates.basis as "collected_at" | "published_at");
   const sources = useRadarSources();
   const scan = useLatestScan();
   const health = useHealth();
@@ -24,12 +31,12 @@ export function Radar() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const isAdmin = me.role === "admin";
+  const { isMe } = useScope();
 
   const [status, setStatus] = useState("open");
   const [kind, setKind] = useState("");
   const [evidence, setEvidence] = useState("");
   const [topic, setTopic] = useState("");
-  const [period, setPeriod] = useState("30");
   const [q, setQ] = useState("");
   const [scanError, setScanError] = useState<unknown>(null);
   const [starting, setStarting] = useState(false);
@@ -73,13 +80,12 @@ export function Radar() {
     } catch (e) { setActionError(e); }
   }
 
-  const since = PERIODS[period] ? new Date(Date.now() - PERIODS[period]! * 86400_000).toISOString() : null;
   const rows = (signals.data ?? []).filter((s) => {
+    if (isMe && s.collected_by !== me.id) return false;
     if (status === "open" ? !["new", "reviewed", "saved"].includes(s.status) : status && s.status !== status) return false;
     if (kind && s.source_type !== kind) return false;
     if (evidence && s.evidence_class !== evidence) return false;
     if (topic && !s.topic_tags.includes(topic)) return false;
-    if (since && s.collected_at < since) return false;
     if (q) {
       const t = q.toLowerCase();
       if (!`${s.title} ${s.excerpt ?? ""} ${s.publisher ?? ""}`.toLowerCase().includes(t)) return false;
@@ -144,11 +150,10 @@ export function Radar() {
           <option value="">Any topic</option>
           {Object.entries(TOPIC_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Collected">
-          <option value="7">Collected last 7 days</option>
-          <option value="30">Collected last 30 days</option>
-          <option value="all">Any time</option>
-        </select>
+        <DateRangePicker {...dates} />
+        <span className="filters__end">
+          <ExportCsvButton name="radar-signals" range={dates.range} disabled={signals.isPending} build={() => signalTable(rows)} />
+        </span>
       </div>
       <ErrorText error={actionError} />
 

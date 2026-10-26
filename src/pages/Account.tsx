@@ -12,6 +12,7 @@ export function Account() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (member.role !== "admin") return; // D-037: contributors' passwords are set by admins
     const problem = validateNewPassword(password, confirm, member.username);
     if (problem) return setMessage({ tone: "error", text: problem });
     setBusy(true);
@@ -29,6 +30,12 @@ export function Account() {
         <h1>Account</h1>
         <p className="muted">{member.display_name} · username <strong>{member.username}</strong></p>
       </header>
+      {member.role !== "admin" ? (
+        <section className="card form">
+          <h2>Password</h2>
+          <p className="muted small">Passwords for contributors are managed by the admins. If you need yours changed or have forgotten it, ask Sourabh or Tanvi.</p>
+        </section>
+      ) : (
       <form className="card form" onSubmit={onSubmit} noValidate>
         <h2>Change password</h2>
         <p className="muted small">
@@ -46,6 +53,7 @@ export function Account() {
         {message && <p className={message.tone === "ok" ? "form__ok" : "form__error"} role="status">{message.text}</p>}
         <button className="button button--primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Update password"}</button>
       </form>
+      )}
     </>
   );
 }

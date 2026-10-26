@@ -1,34 +1,30 @@
 import { useMemo, useState, type FormEvent } from "react";
-import { Link, NavLink, Outlet } from "react-router";
+import { Link } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  client, type Learning, run, type TaskEvent, useAllTaskEvents, useGoals, useLearnings, useLookups,
+  client, type Learning, run, type TaskEvent, useTaskEvents, useGoals, useLearnings, useLookups,
   useOpportunities, useTasks,
 } from "../lib/api.ts";
-import { formatDate, formatDateTime, goalRef, taskRef } from "../lib/format.ts";
+import {formatDate, formatDateTime} from "../lib/format.ts";
 import { LEARNING_CLASS_LABEL, LEARNING_STATUS_LABEL } from "../lib/labels.ts";
 import { useMember } from "../lib/session.tsx";
+import { isMyTask, useScope } from "../lib/scope.tsx";
 import { Chip } from "../components/Tone.tsx";
 import { ErrorText, Field, orNull } from "../components/Form.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
-import { oppRef } from "./Opportunities.tsx";
 
-export function LearningLoop() {
-  return (
-    <>
-      <header className="page-header">
-        <h1>Learning Loop</h1>
-        <p className="muted">What happened, what we think explains it, how sure we are, and what to test next. Process insights come from recorded workflow history only.</p>
-      </header>
-      <nav className="tabs" aria-label="Learning views">
-        <NavLink to="/learning" end>Learnings</NavLink>
-        <NavLink to="/learning/process">Process insights</NavLink>
-      </nav>
-      <Outlet />
-    </>
-  );
-}
+import { inRange, overlaps } from "../lib/dateRange.ts";
+import { eventTable, learningTable } from "../lib/exportRows.ts";
+import { DateRangePicker, ExportCsvButton, useDateRange } from "../components/DateRange.tsx";
+
+const LEARNING_DATE_BASES = [
+  { value: "created", label: "Recorded in period" },
+  { value: "period", label: "Observation period overlaps" },
+  { value: "review", label: "Review date in period" },
+  { value: "decided", label: "Decided in period" },
+];
+
 
 // ---------------------------------------------------------------- learnings
 type Values = Record<"title" | "learning_class" | "observation" | "period_start" | "period_end" | "evidence" | "interpretation" | "confidence"
@@ -43,7 +39,9 @@ const toRow = (v: Values) => Object.fromEntries(Object.entries(v).map(([k, val])
 
 export function Learnings() {
   const learnings = useLearnings();
-  const { memberName } = useLookups();
+  const { memberName, label } = useLookups();
+  const dates = useDateRange({ bases: LEARNING_DATE_BASES });
+  const { isMe } = useScope();
   const { member: me } = useMember();
   const qc = useQueryClient();
   const isAdmin = me.role === "admin";
@@ -56,7 +54,11 @@ export function Learnings() {
 
   if (learnings.isPending) return <Loading />;
   if (learnings.isError) return <StatePanel title="Could not load learnings" tone="error"><p>{learnings.error.message}</p></StatePanel>;
-  const rows = learnings.data.filter((l) => (!status || l.status === status) && (!cls || l.learning_class === cls));
+  const when = (l: Learning) =>
+    dates.basis === "period" ? overlaps(l.period_start, l.period_end, dates.range)
+    : inRange(dates.basis === "review" ? l.review_date : dates.basis === "decided" ? l.decided_at : l.created_at, dates.range);
+  const rows = learnings.data.filter((l) => (!status || l.status === status) && (!cls || l.learning_class === cls) && when(l)
+    && (!isMe || l.created_by === me.id || l.owner_id === me.id));
   const pending = learnings.data.filter((l) => l.status === "pending_review").length;
   const refresh = () => qc.invalidateQueries({ queryKey: ["learnings"] });
 
@@ -79,7 +81,11 @@ export function Learnings() {
           <option value="">All types</option>
           {Object.entries(LEARNING_CLASS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <DateRangePicker {...dates} />
         <button type="button" className="button button--primary" onClick={() => setEditing({ values: empty(me.id) })}>+ Record a learning</button>
+        <span className="filters__end">
+          <ExportCsvButton name="learnings" range={dates.range} build={() => learningTable(rows, { label, memberName })} />
+        </span>
       </div>
       {rows.length === 0 ? <StatePanel title="No learnings recorded"><p>Record an observation from a campaign, a piece of content or the way work flowed.</p></StatePanel> : (
         <div className="goal-list">
@@ -87,7 +93,6 @@ export function Learnings() {
             <section key={l.id} className="card learning">
               <header className="goal__header">
                 <div>
-                  <span className="ref">L-{l.ref}</span>
                   <h2>{l.title}</h2>
                   <p className="small muted">{LEARNING_CLASS_LABEL[l.learning_class] ?? l.learning_class} · confidence {l.confidence} · {l.period_start || l.period_end ? `${formatDate(l.period_start)} – ${formatDate(l.period_end)}` : "period not set"} · recorded by {memberName(l.created_by)}</p>
                 </div>
@@ -142,9 +147,9 @@ function LinkedRefs({ l }: { l: Learning }) {
   if (!t && !g && !o) return null;
   return (
     <><dt>Linked to</dt><dd className="chips">
-      {t && <Link className="chip" to={`/workspace/tasks/${t.ref}`}>{taskRef(t.ref)} · {t.title}</Link>}
-      {g && <Link className="chip" to="/workspace/goals">{goalRef(g.ref)} · {g.title}</Link>}
-      {o && <Link className="chip" to={`/opportunities/${o.ref}`}>{oppRef(o.ref)} · {o.title}</Link>}
+      {t && <Link className="chip" to={`/workspace/tasks/${t.ref}`}>{t.title}</Link>}
+      {g && <Link className="chip" to={`/goals#goal-${g.ref}`}>{g.title}</Link>}
+      {o && <Link className="chip" to={`/opportunities/${o.ref}`}>{o.title}</Link>}
     </dd></>
   );
 }
@@ -203,17 +208,17 @@ function LearningForm({ initial, id, onClose, onSaved }: { initial: Values; id?:
         <Field label="Review on"><input type="date" value={v.review_date} onChange={(e) => set("review_date", e.target.value)} /></Field>
         <Field label="Linked task">
           <select value={v.task_id} onChange={(e) => set("task_id", e.target.value)}>
-            <option value="">None</option>{(tasks.data ?? []).map((t) => <option key={t.id} value={t.id}>{taskRef(t.ref)} · {t.title}</option>)}
+            <option value="">None</option>{(tasks.data ?? []).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
           </select>
         </Field>
         <Field label="Linked goal">
           <select value={v.goal_id} onChange={(e) => set("goal_id", e.target.value)}>
-            <option value="">None</option>{(goals.data ?? []).map((g) => <option key={g.id} value={g.id}>{goalRef(g.ref)} · {g.title}</option>)}
+            <option value="">None</option>{(goals.data ?? []).map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
           </select>
         </Field>
         <Field label="Linked opportunity" wide>
           <select value={v.opportunity_id} onChange={(e) => set("opportunity_id", e.target.value)}>
-            <option value="">None</option>{(opps.data ?? []).map((o) => <option key={o.id} value={o.id}>{oppRef(o.ref)} · {o.title}</option>)}
+            <option value="">None</option>{(opps.data ?? []).map((o) => <option key={o.id} value={o.id}>{o.title}</option>)}
           </select>
         </Field>
         <div className="field--wide">
@@ -227,29 +232,41 @@ function LearningForm({ initial, id, onClose, onSaved }: { initial: Values; id?:
 
 // ---------------------------------------------------------------- process insights
 export function ProcessInsights() {
-  const events = useAllTaskEvents(2000);
-  const { label } = useLookups();
+  const dates = useDateRange();
+  const events = useTaskEvents(dates.range, 2000);
+  const tasks = useTasks();
+  const { label, memberName } = useLookups();
+  const { member: me } = useMember();
+  const { isMe } = useScope();
   const decisions = useMemo(() => {
-    const ev = (events.data ?? []) as TaskEvent[];
+    const myTasks = new Set((tasks.data ?? []).filter((t) => isMyTask(t, me.id)).map((t) => t.id));
+    const onDesk = new Set((tasks.data ?? []).map((t) => t.id));
+    const ev = ((events.data ?? []) as TaskEvent[]).filter((e) => onDesk.has(e.task_id) && (!isMe || e.actor_id === me.id || myTasks.has(e.task_id)));
     return {
       approved: ev.filter((e) => e.event_type === "approved").length,
       changes: ev.filter((e) => e.event_type === "changes_requested").length,
       rework: ev.filter((e) => e.event_type === "returned_for_rework"),
       blocked: ev.filter((e) => e.event_type === "blocked"),
     };
-  }, [events.data]);
+  }, [events.data, tasks.data, isMe, me.id]);
 
   if (events.isPending) return <Loading />;
 
   return (
     <>
+      <div className="filters">
+        <DateRangePicker {...dates} />
+        <span className="filters__end">
+          <ExportCsvButton name="task-events" range={dates.range} build={() => eventTable((events.data ?? []).filter((e) => !isMe || e.actor_id === me.id || (tasks.data ?? []).some((t) => t.id === e.task_id && isMyTask(t, me.id))), tasks.data ?? [], { label, memberName })} />
+        </span>
+      </div>
       <section className="card">
         <h2>Stage times, waits and lags</h2>
         <p className="small muted">
           Wait before pick-up, stage time and hand-off lags (by stage, task type and goal, from idea to done) are in the
           Workspace <strong>Flow</strong> view, using the same recorded timestamps.
         </p>
-        <Link className="button" to="/workspace/flow">Open Flow</Link>
+        <Link className="button" to="/insights/flow">Open Flow</Link>
       </section>
       <div className="attention-grid section-title">
         <section className="card">

@@ -135,12 +135,23 @@ export function reviewFlags(out: DraftOutput, suppliedUrls: string[]): string[] 
   return flags;
 }
 
-export interface DraftResult { output: DraftOutput; model: string; promptTokens: number | null; completionTokens: number | null }
+export interface ModelResult<T> { output: T; model: string; promptTokens: number | null; completionTokens: number | null }
+export type DraftResult = ModelResult<DraftOutput>;
 
-export async function callOpenAI(
+/** What the model must return: a JSON schema plus a normaliser that makes any reply safe to render. */
+export interface OutputSpec<T> { name: string; schema: object; normalize: (raw: unknown) => T; temperature?: number; maxTokens?: number }
+
+export const DRAFT_SPEC: OutputSpec<DraftOutput> = {
+  name: "akidha_draft", schema: DRAFT_SCHEMA, normalize: (raw) => normalizeDraft(raw), temperature: 0.7, maxTokens: 16000,
+};
+
+type CallOpts<T> = { apiKey: string; model: string; fetcher?: typeof fetch; timeoutMs?: number; spec?: OutputSpec<T> };
+
+export async function callOpenAI<T = DraftOutput>(
   messages: { role: string; content: string }[],
-  opts: { apiKey: string; model: string; fetcher?: typeof fetch; timeoutMs?: number },
-): Promise<DraftResult> {
+  opts: CallOpts<T>,
+): Promise<ModelResult<T>> {
+  const spec = (opts.spec ?? DRAFT_SPEC) as OutputSpec<T>;
   const fetcher = opts.fetcher ?? fetch;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 240_000);
@@ -152,8 +163,8 @@ export async function callOpenAI(
       body: JSON.stringify({
         model: opts.model,
         messages,
-        response_format: { type: "json_schema", json_schema: { name: "akidha_draft", strict: true, schema: DRAFT_SCHEMA } },
-        max_completion_tokens: 6000,
+        response_format: { type: "json_schema", json_schema: { name: spec.name, strict: true, schema: spec.schema } },
+        max_completion_tokens: Math.min(spec.maxTokens ?? 6000, 6000),
       }),
     });
     const body = (await res.json().catch(() => ({}))) as {
@@ -166,7 +177,7 @@ export async function callOpenAI(
     if (msg?.refusal) throw new Error(`Model declined: ${msg.refusal}`);
     if (!msg?.content) throw new Error("Model returned no content");
     return {
-      output: normalizeDraft(JSON.parse(msg.content)),
+      output: spec.normalize(JSON.parse(msg.content)),
       model: body.model ?? opts.model,
       promptTokens: body.usage?.prompt_tokens ?? null,
       completionTokens: body.usage?.completion_tokens ?? null,
@@ -224,10 +235,11 @@ export function normalizeGeminiModel(input: string): string {
 }
 
 /** Google Gemini (AI Studio key). System message becomes systemInstruction; output is forced to JSON matching DRAFT_SCHEMA. */
-export async function callGemini(
+export async function callGemini<T = DraftOutput>(
   messages: { role: string; content: string }[],
-  opts: { apiKey: string; model: string; fetcher?: typeof fetch; timeoutMs?: number },
-): Promise<DraftResult> {
+  opts: CallOpts<T>,
+): Promise<ModelResult<T>> {
+  const spec = (opts.spec ?? DRAFT_SPEC) as OutputSpec<T>;
   const fetcher = opts.fetcher ?? fetch;
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
   const contents = messages.filter((m) => m.role !== "system")
@@ -248,9 +260,9 @@ export async function callGemini(
           contents,
           generationConfig: {
             responseMimeType: "application/json",
-            [schemaField]: schemaField === "responseSchema" ? geminiLegacySchema(DRAFT_SCHEMA) : DRAFT_SCHEMA,
-            maxOutputTokens: 16000,
-            temperature: 0.7,
+            [schemaField]: schemaField === "responseSchema" ? geminiLegacySchema(spec.schema) : spec.schema,
+            maxOutputTokens: spec.maxTokens ?? 16000,
+            temperature: spec.temperature ?? 0.7,
           },
         }),
       });
@@ -289,7 +301,7 @@ export async function callGemini(
     throw new Error(cand?.finishReason === "MAX_TOKENS" ? "Gemini stopped before finishing (output too long). Try a shorter format." : "Gemini returned malformed output");
   }
   return {
-    output: normalizeDraft(parsed),
+    output: spec.normalize(parsed),
     model: body.modelVersion ?? model,
     promptTokens: body.usageMetadata?.promptTokenCount ?? null,
     completionTokens: body.usageMetadata?.candidatesTokenCount ?? null,
@@ -297,11 +309,12 @@ export async function callGemini(
 }
 
 /** Dispatch to the configured provider (D-024). */
-export function callModel(
+export function callModel<T = DraftOutput>(
   messages: { role: string; content: string }[],
   cfg: { provider: "gemini" | "openai"; apiKey: string; model: string },
   fetcher?: typeof fetch,
-): Promise<DraftResult> {
-  const opts = { apiKey: cfg.apiKey, model: cfg.model, ...(fetcher ? { fetcher } : {}) };
-  return cfg.provider === "gemini" ? callGemini(messages, opts) : callOpenAI(messages, opts);
+  spec?: OutputSpec<T>,
+): Promise<ModelResult<T>> {
+  const opts: CallOpts<T> = { apiKey: cfg.apiKey, model: cfg.model, ...(fetcher ? { fetcher } : {}), ...(spec ? { spec } : {}) };
+  return cfg.provider === "gemini" ? callGemini<T>(messages, opts) : callOpenAI<T>(messages, opts);
 }

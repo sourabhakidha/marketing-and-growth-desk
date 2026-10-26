@@ -4,6 +4,7 @@ import { matchesFilters, useTaskFilters } from "../workspace/filters.ts";
 import { type Goal, type Task, useGoals, useLookups, useTasks, useUpdateTask } from "../lib/api.ts";
 import { formatDate, goalRef, isOverdue, taskRef, todayInIndia } from "../lib/format.ts";
 import { useMember } from "../lib/session.tsx";
+import { isMyTask, useScope } from "../lib/scope.tsx";
 import { ErrorText, Field } from "../components/Form.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
@@ -24,8 +25,8 @@ export function buildEntries(tasks: Task[], goals: Goal[], showClosed: boolean):
   }
   for (const g of goals) {
     if (!showClosed && ["achieved", "not_achieved", "cancelled"].includes(g.status)) continue;
-    if (g.start_date) out.push({ key: `${g.id}-s`, date: g.start_date, kind: "goal_start", title: g.title, ref: goalRef(g.ref), href: "/workspace/goals", ownerId: g.owner_id, status: g.status, goal: g });
-    if (g.end_date) out.push({ key: `${g.id}-e`, date: g.end_date, kind: "goal_end", title: g.title, ref: goalRef(g.ref), href: "/workspace/goals", ownerId: g.owner_id, status: g.status, goal: g });
+    if (g.start_date) out.push({ key: `${g.id}-s`, date: g.start_date, kind: "goal_start", title: g.title, ref: goalRef(g.ref), href: "/goals", ownerId: g.owner_id, status: g.status, goal: g });
+    if (g.end_date) out.push({ key: `${g.id}-e`, date: g.end_date, kind: "goal_end", title: g.title, ref: goalRef(g.ref), href: "/goals", ownerId: g.owner_id, status: g.status, goal: g });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
 }
@@ -63,6 +64,7 @@ export function Calendar({ embedded = false }: { embedded?: boolean } = {}) {
   const goals = useGoals();
   const { members, memberName, options, ready } = useLookups();
   const { member: me } = useMember();
+  const { scope } = useScope();
   const isAdmin = me.role === "admin";
   const today = todayInIndia();
   const [cursor, setCursor] = useState(() => ({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) - 1 }));
@@ -74,12 +76,13 @@ export function Calendar({ embedded = false }: { embedded?: boolean } = {}) {
   const [editing, setEditing] = useState<CalEntry | null>(null);
 
   const scopedTasks = useMemo(() => (embedded
-    ? (tasks.data ?? []).filter((t) => matchesFilters(t, shared.f, { meId: me.id, today }))
-    : (tasks.data ?? [])), [embedded, tasks.data, shared.f, me.id, today]);
+    ? (tasks.data ?? []).filter((t) => matchesFilters(t, shared.f, { meId: me.id, today, scope, all: tasks.data }))
+    : (tasks.data ?? []).filter((t) => scope === "team" || isMyTask(t, me.id))), [embedded, tasks.data, shared.f, me.id, today, scope]);
   const scopedGoals = useMemo(() => (embedded
     ? (goals.data ?? []).filter((g) => (!shared.f.goal || shared.f.goal === g.id) && shared.f.goal !== "none" && (!shared.f.owner || g.owner_id === shared.f.owner)
         && !shared.f.type && !shared.f.priority && !shared.f.q && !shared.f.due && !shared.f.mine)
-    : (goals.data ?? [])), [embedded, goals.data, shared.f]);
+    : (goals.data ?? [])).filter((g) => scope === "team" || g.owner_id === me.id || scopedTasks.some((t) => t.goal_id === g.id)),
+    [embedded, goals.data, shared.f, scope, me.id, scopedTasks]);
   const entries = useMemo(() => buildEntries(scopedTasks, scopedGoals, showClosed)
     .filter((e) => kinds[e.kind])
     .filter((e) => !owner || e.ownerId === owner)
@@ -172,7 +175,7 @@ export function Calendar({ embedded = false }: { embedded?: boolean } = {}) {
                   {(i === 0 || agenda[i - 1]!.date !== e.date) && <h3 className="agenda__date">{formatDate(e.date)}{e.date === today && " · Today"}</h3>}
                   <div className="agenda__row">
                     <span className={`kind kind--${e.kind}`}>{KIND_LABEL[e.kind]}</span>
-                    <Link to={hrefFor(e)}><span className="ref">{e.ref}</span> {e.title}</Link>
+                    <Link to={hrefFor(e)}>{e.title}</Link>
                     <span className="muted small">{memberName(e.ownerId)}</span>
                     {isAdmin && e.task && <button type="button" className="link small" onClick={() => setEditing(e)}>Reschedule</button>}
                   </div>
@@ -204,7 +207,7 @@ function Reschedule({ entry, onClose }: { entry: CalEntry; onClose: () => void }
   const [due, setDue] = useState(t.due_date ?? "");
   const [publish, setPublish] = useState(t.publish_date ?? "");
   return (
-    <Modal title={`Reschedule ${taskRef(t.ref)}`} open onClose={onClose}>
+    <Modal title={`Reschedule “${t.title}”`} open onClose={onClose}>
       <div className="stack">
         <p className="muted small">{t.title}. The change is saved on the task and recorded in its history.</p>
         <Field label="Due date"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>

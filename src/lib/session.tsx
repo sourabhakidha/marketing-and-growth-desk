@@ -77,6 +77,6 @@ export function describeDbError(message: string): string {
   if (/schema must be one of|Invalid schema/i.test(message)) {
     return "The marketing_os schema is not exposed in the Supabase Data API yet (see docs/SUPABASE_SETUP.md).";
   }
-  if (/permission denied/i.test(message)) return "You do not have permission to view this.";
+  if (/permission denied/i.test(message)) return "You do not have permission to do this. If you think you should, ask Sourabh or Tanvi.";
   return message;
 }

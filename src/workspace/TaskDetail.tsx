@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
-import { type TaskEvent, type TaskStage, useDrafts, useGoals, useLookups, useOpportunities, useTask, useUpdateTask, useWorkflowAction, type WorkflowAction } from "../lib/api.ts";
+import { Link, useParams, useNavigate } from "react-router";
+import { type TaskEvent, type TaskStage, useBinAction, useDrafts, useGoals, useLookups, useOpportunities, useTask, useUpdateTask, useWorkflowAction, type WorkflowAction, useTasks } from "../lib/api.ts";
 import { DRAFT_STATUS_LABEL } from "../lib/labels.ts";
 import { Chip } from "../components/Tone.tsx";
-import { formatDate, formatDateTime, formatDuration, goalRef, isOverdue, minutesBetween, taskRef } from "../lib/format.ts";
-import { availableActions } from "../lib/permissions.ts";
+import {formatDate, formatDateTime, formatDuration, isOverdue, minutesBetween} from "../lib/format.ts";
+import { availableActions, heldByAdmin, REVIEW_STAGES } from "../lib/permissions.ts";
+import { TaskImpactPanel } from "../modules/ImpactParts.tsx";
+import { DeliverableJourney, PartOfStrip } from "./Deliverables.tsx";
+import { missingImpact } from "../lib/impact.ts";
+import { partsOf } from "../lib/deliverables.ts";
+import { MoveToBinDialog, PurgeDialog } from "../components/DeleteDialog.tsx";
 import { useMember } from "../lib/session.tsx";
 import { PriorityMark, StatusBadge } from "../components/Badges.tsx";
 import { ErrorText, Field } from "../components/Form.tsx";
@@ -12,8 +17,15 @@ import { Modal } from "../components/Modal.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
 import { TaskForm, taskToValues, valuesToTask } from "./TaskForm.tsx";
 
+type PanelTab = "overview" | "workflow" | "impact" | "history";
+const PANEL_TABS: { key: PanelTab; label: string }[] = [
+  { key: "overview", label: "Overview" }, { key: "workflow", label: "Workflow" },
+  { key: "impact", label: "Impact & AI" }, { key: "history", label: "History" },
+];
+
 type Dialog =
-  | null | "edit" | "hand_off" | "return" | "block" | "unblock" | "submit" | "approve" | "request_changes" | "cancel" | "reopen";
+  | null | "edit" | "hand_off" | "return" | "block" | "unblock" | "submit" | "approve" | "request_changes" | "cancel" | "reopen"
+  | "accept" | "decline" | "delete" | "purge";
 
 export function TaskDetail() {
   const ref = Number(useParams().ref);
@@ -37,12 +49,17 @@ export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionCon
   const opps = useOpportunities();
   const drafts = useDrafts();
   const { member: me } = useMember();
-  const { label, memberName, members, ready } = useLookups();
+  const { label, memberName, members, isAdminMember, ready } = useLookups();
   const action = useWorkflowAction();
+  const allTasks = useTasks();
+  const bin = useBinAction();
+  const navigate = useNavigate();
   const update = useUpdateTask();
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [tab, setTab] = useState<PanelTab>("overview");
   const [note, setNote] = useState("");
   const [nextOwner, setNextOwner] = useState("");
+  const [withParts, setWithParts] = useState(true);
   const [returnTo, setReturnTo] = useState("");
   const [comment, setComment] = useState("");
 
@@ -70,12 +87,20 @@ export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionCon
   const current = stages.find((s) => s.state === "active") ?? null;
   const next = current ? stages.find((s) => s.state === "pending" && s.position > current.position) : undefined;
   const earlierDone = stages.filter((s) => s.state === "done" && (!current || s.position < current.position));
-  const acts = availableActions({
+  const ctx = {
+    removed: Boolean(task.removed_at), neverAccepted: stages.length > 0 && stages.every((s) => !s.entered_at),
     meId: me.id, isAdmin, status: task.status, ownerId: task.owner_id, createdBy: task.created_by,
-    activeStage: current ? { ownerId: current.owner_id, pickedUp: Boolean(current.picked_up_at) } : null,
+    activeStage: current ? { ownerId: current.owner_id, pickedUp: Boolean(current.picked_up_at), ownerIsAdmin: isAdminMember(current.owner_id) } : null,
     hasNextStage: Boolean(next), hasEarlierDoneStage: earlierDone.length > 0,
-  });
-  const goal = goals.data?.find((g) => g.id === task.goal_id);
+  };
+  const acts = availableActions(ctx);
+  const waitingOnAdmin = heldByAdmin(ctx);
+  // an admin holding a review stage approves it by handing on, or asks for a revision by returning it
+  const adminReview = isAdmin && Boolean(current && REVIEW_STAGES.has(current.stage_code) && isAdminMember(current.owner_id));
+  const parent = task.parent_id ? (allTasks.data ?? []).find((t) => t.id === task.parent_id) : undefined;
+  const goal = goals.data?.find((g) => g.id === (task.goal_id ?? parent?.goal_id));
+  const isDeliverable = task.kind === "deliverable";
+  const openParts = isDeliverable ? partsOf(task.id, allTasks.data ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").length : 0;
   const opp = opps.data?.find((o) => o.id === task.opportunity_id);
   const taskDrafts = (drafts.data ?? []).filter((d) => d.task_id === task.id);
   const activeMembers = (members.data ?? []).filter((m) => m.is_active);
@@ -90,17 +115,25 @@ export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionCon
     setDialog(d);
   }
   const run = (a: WorkflowAction) => action.mutate(a, { onSuccess: () => { setDialog(null); setNote(""); setComment(""); } });
+  // accepting a workflow deliverable request also accepts the task requests planned with it (each keeps its owner)
+  const requestedParts = isDeliverable ? partsOf(task.id, allTasks.data ?? []).filter((p) => p.status === "requested") : [];
+  async function acceptRequest() {
+    try {
+      await action.mutateAsync({ fn: "task_review_request", args: { p_task: task.id, p_accept: true, p_note: note || null, p_owner: nextOwner || null } });
+      if (withParts) for (const p of requestedParts) await action.mutateAsync({ fn: "task_review_request", args: { p_task: p.id, p_accept: true, p_note: null, p_owner: null } });
+      setDialog(null); setNote("");
+    } catch { /* shown by the dialog from action.error */ }
+  }
   const id = task.id;
 
   return (
     <article className={`task-detail${drawer ? " task-detail--drawer" : ""}`}>
       {drawer ? (
         <div className="drawer__top">
-          <span className="ref">{taskRef(task.ref)}</span>
           <Link className="link small" to={`/workspace/tasks/${task.ref}`}>Open full page</Link>
           {onClose && <button type="button" className="icon-button" aria-label="Close task panel" onClick={onClose}>×</button>}
         </div>
-      ) : <p className="crumbs"><Link to="/workspace">Workspace</Link> / {taskRef(task.ref)}</p>}
+      ) : <p className="crumbs"><Link to="/workspace">Workspace</Link> / {task.kind === "deliverable" ? "Deliverable" : "Task"}</p>}
       <header className="task-detail__header">
         <div>
           {drawer ? <h2 className="drawer__title">{task.title}</h2> : <h1>{task.title}</h1>}
@@ -127,78 +160,136 @@ export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionCon
       {task.status === "in_review" && (
         <div className="state state--warning">{isAdmin ? "Waiting for your approval." : "Submitted — waiting for Sourabh or Tanvi to approve."}</div>
       )}
+      {task.removed_at && (
+        <div className="state state--error">
+          <strong>In the Recycle Bin.</strong> Deleted {formatDateTime(task.removed_at)} by {memberName(task.removed_by)}{task.removed_reason ? ` — ${task.removed_reason}` : ""}.
+          {isAdmin && (
+            <div className="row-actions bin-actions">
+              <button type="button" className="button button--small" disabled={bin.isPending}
+                onClick={() => bin.mutate({ fn: "task_restore", args: { p_task: id } })}>Restore</button>
+              <button type="button" className="button button--small button--quiet button--danger-text" onClick={() => { bin.reset(); setDialog("purge"); }}>Delete permanently</button>
+            </div>
+          )}
+        </div>
+      )}
+      {task.status === "requested" && (
+        <div className="state state--warning">
+          {isAdmin
+            ? <>Task request from {memberName(task.created_by)}. Review it, complete the expected business impact if needed, then accept or decline.</>
+            : <>Requested — waiting for Sourabh or Tanvi to accept it. You can still edit the details or withdraw the request.</>}
+        </div>
+      )}
+      {waitingOnAdmin && current && (
+        <div className="state state--warning">
+          With {memberName(current.owner_id)} for {label("workflow_stage", current.stage_code)}. It stays here until an admin approves it
+          (hands it on) or sends it back for revision.
+        </div>
+      )}
 
       <div className="action-bar" aria-label="Workflow actions">
+        {acts.has("accept_request") && <button type="button" className="button button--primary" onClick={() => open("accept")}>Accept request</button>}
+        {acts.has("decline_request") && <button type="button" className="button" onClick={() => open("decline")}>Decline</button>}
         {acts.has("pick_up") && (
           <button type="button" className="button button--primary" disabled={action.isPending}
             onClick={() => run({ fn: "task_pick_up", args: { p_task: id } })}>Pick up {current ? label("workflow_stage", current.stage_code) : ""}</button>
         )}
-        {acts.has("hand_off") && next && <button type="button" className="button button--primary" onClick={() => open("hand_off")}>Hand off to {label("workflow_stage", next.stage_code)}</button>}
+        {acts.has("hand_off") && next && <button type="button" className="button button--primary" onClick={() => open("hand_off")}>{adminReview ? "Approve → " : "Hand off to "}{label("workflow_stage", next.stage_code)}</button>}
         {acts.has("submit") && <button type="button" className={`button${acts.has("hand_off") ? "" : " button--primary"}`} onClick={() => open("submit")}>Submit for approval</button>}
-        {acts.has("approve") && <button type="button" className="button button--primary" onClick={() => open("approve")}>Approve completion</button>}
+        {acts.has("approve") && (task.parent_id
+          ? <button type="button" className="button button--primary" disabled={action.isPending}
+              onClick={() => run({ fn: "task_decide", args: { p_task: id, p_approve: true, p_feedback: null } })}>Sign off</button>
+          : <button type="button" className="button button--primary" disabled={openParts > 0} title={openParts > 0 ? `${openParts} task(s) still open` : undefined}
+              onClick={() => open("approve")}>{isDeliverable ? "Approve deliverable" : "Approve completion"}</button>)}
+        {acts.has("approve") && openParts > 0 && <span className="small muted">{openParts} of its tasks {openParts === 1 ? "is" : "are"} still open — finish or cancel them before approving.</span>}
         {acts.has("request_changes") && <button type="button" className="button" onClick={() => open("request_changes")}>Request changes</button>}
-        {acts.has("return_for_rework") && <button type="button" className="button" onClick={() => open("return")}>Return for rework</button>}
+        {acts.has("return_for_rework") && <button type="button" className="button" onClick={() => open("return")}>{adminReview ? "Request revision" : "Return for rework"}</button>}
         {acts.has("block") && <button type="button" className="button" onClick={() => open("block")}>Mark blocked</button>}
         {acts.has("unblock") && <button type="button" className="button button--primary" onClick={() => open("unblock")}>Unblock</button>}
         {acts.has("reopen") && <button type="button" className="button" onClick={() => open("reopen")}>Reopen</button>}
-        {acts.has("cancel") && <button type="button" className="button button--quiet" onClick={() => open("cancel")}>Cancel task</button>}
-        {acts.size === 0 && <span className="muted small">You can view this task. Only its owner, the current stage owner or an admin can act on it.</span>}
+        {acts.has("cancel") && <button type="button" className="button button--quiet" onClick={() => open("cancel")}>{task.status === "requested" ? "Withdraw request" : isDeliverable ? "Cancel deliverable" : "Cancel task"}</button>}
+        {isAdmin && !task.removed_at && <button type="button" className="button button--quiet button--danger-text" onClick={() => { bin.reset(); setDialog("delete"); }}>Delete</button>}
+        {acts.size === 0 && !waitingOnAdmin && <span className="muted small">You can view this task. Only its owner, the current stage owner or an admin can act on it.</span>}
       </div>
       {!dialog && <ErrorText error={action.error} />}
 
-      <div className="task-detail__grid">
-        <section className="card">
-          <h2>Details</h2>
-          <dl className="details">
-            <dt>Owner</dt><dd>{memberName(task.owner_id)}</dd>
-            <dt>Due</dt><dd className={isOverdue(task.due_date, task.status) ? "due--late" : undefined}>{formatDate(task.due_date)}</dd>
-            <dt>Publish date</dt><dd>{formatDate(task.publish_date)}</dd>
-            <dt>Reviewer</dt><dd>{memberName(task.reviewer_id)}</dd>
-            {opp && <><dt>From opportunity</dt><dd><Link to={`/opportunities/${opp.ref}`}>O-{opp.ref} · {opp.title}</Link></dd></>}
-            <dt>Goal</dt><dd>{goal ? <Link to="/workspace/goals">{goalRef(goal.ref)} · {goal.title}</Link> : "Independent task"}{goal && task.counts_toward_goal && <span className="tag">counts as deliverable</span>}</dd>
-            <dt>Format</dt><dd>{task.deliverable_format ?? "—"}</dd>
-            <dt>Channel</dt><dd>{task.channel ?? "—"}</dd>
-            {task.requester && <><dt>Requested by</dt><dd>{task.requester}</dd></>}
-            <dt>Estimate</dt><dd>{task.estimated_minutes ? formatDuration(task.estimated_minutes) : "—"}</dd>
-            <dt>Deliverable</dt><dd>{task.deliverable_url ? <a href={task.deliverable_url} target="_blank" rel="noopener noreferrer">Open link</a> : "Not attached yet"}</dd>
-            <dt>Created</dt><dd>{formatDateTime(task.created_at)} by {memberName(task.created_by)}</dd>
-            {task.completed_at && <><dt>Approved</dt><dd>{formatDateTime(task.completed_at)}</dd></>}
-          </dl>
-          {task.brief && <><h3>Brief</h3><p className="prewrap">{task.brief}</p></>}
-          {task.completion_criteria && <><h3>Completion criteria</h3><p className="prewrap">{task.completion_criteria}</p></>}
-          {taskDrafts.length > 0 && <><h3>AI drafts</h3><ul className="linked-tasks">{taskDrafts.map((d) => (
-            <li key={d.id}><Link to={`/intelligence/drafts/${d.ref}`}>D-{d.ref} · {d.output?.working_title ?? d.kind}</Link><Chip code={d.status} label={DRAFT_STATUS_LABEL[d.status]!} /></li>
-          ))}</ul></>}
-        </section>
+      <nav className="panel-tabs" role="tablist" aria-label="Task sections">
+        {PANEL_TABS.map((t) => (
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-on" : undefined} onClick={() => setTab(t.key)}>
+            {t.key === "workflow" && task.kind === "deliverable" ? "Journey" : t.label}{t.key === "history" ? ` (${events.length})` : ""}
+          </button>
+        ))}
+      </nav>
 
-        <section className="card">
-          <h2>Workflow</h2>
-          {stages.length === 0 ? <p className="muted">This task has no workflow stages.</p> : (
-            <ol className="stages">
-              {stages.map((s) => (
-                <StageRow key={s.id} s={s} label={label} memberName={memberName}
-                  canSkip={s.state === "pending" && (acts.has("hand_off") || acts.has("submit"))}
-                  onSkip={() => run({ fn: "task_skip_stage", args: { p_task: id, p_stage: s.id, p_note: null } })} />
-              ))}
-            </ol>
+      {tab === "overview" && (
+        <div className="panel-tab" role="tabpanel">
+          {task.parent_id && <PartOfStrip task={task} />}
+          <section className="card">
+            <h2>Details</h2>
+            <dl className="details">
+              <dt>Owner</dt><dd>{memberName(task.owner_id)}</dd>
+              <dt>Due</dt><dd className={isOverdue(task.due_date, task.status) ? "due--late" : undefined}>{formatDate(task.due_date)}</dd>
+              <dt>Publish date</dt><dd>{formatDate(task.publish_date)}</dd>
+              <dt>Reviewer</dt><dd>{memberName(task.reviewer_id)}</dd>
+              {opp && <><dt>From opportunity</dt><dd><Link to={`/opportunities/${opp.ref}`}>{opp.title}</Link></dd></>}
+              <dt>Goal</dt><dd>{goal ? <Link to={`/goals#goal-${goal.ref}`}>{goal.title}</Link> : "No goal"}{parent && goal && !task.goal_id && <span className="small muted"> (through its deliverable)</span>}{goal && task.counts_toward_goal && <span className="tag">counts toward the goal’s target</span>}</dd>
+              {parent && <><dt>Deliverable</dt><dd>{parent.title}</dd></>}
+              <dt>Format</dt><dd>{task.deliverable_format ?? "—"}</dd>
+              <dt>Channel</dt><dd>{task.channel ? label("channel", task.channel) : "—"}</dd>
+              {task.requester && <><dt>Requested by</dt><dd>{task.requester}</dd></>}
+              <dt>Estimate</dt><dd>{task.estimated_minutes ? formatDuration(task.estimated_minutes) : "—"}</dd>
+              <dt>Output link</dt><dd>{task.deliverable_url ? <a href={task.deliverable_url} target="_blank" rel="noopener noreferrer">Open link</a> : "Not attached yet"}</dd>
+              <dt>Created</dt><dd>{formatDateTime(task.created_at)} by {memberName(task.created_by)}</dd>
+              {task.completed_at && <><dt>Approved</dt><dd>{formatDateTime(task.completed_at)}</dd></>}
+            </dl>
+            {task.brief && <><h3>Brief</h3><p className="prewrap">{task.brief}</p></>}
+            {task.completion_criteria && <><h3>Completion criteria</h3><p className="prewrap">{task.completion_criteria}</p></>}
+            {taskDrafts.length > 0 && <><h3>AI drafts</h3><ul className="linked-tasks">{taskDrafts.map((d) => (
+              <li key={d.id}><Link to={`/intelligence/drafts/${d.ref}`}>{d.output?.working_title ?? (d.kind === "script" ? "Script draft" : "Brief draft")}</Link><Chip code={d.status} label={DRAFT_STATUS_LABEL[d.status]!} /></li>
+            ))}</ul></>}
+          </section>
+        </div>
+      )}
+      {tab === "workflow" && (
+        <div className="panel-tab" role="tabpanel">
+          {task.kind === "deliverable" ? <>
+            <p className="jr-cta"><Link className="button button--small button--primary" to={`/workspace/deliverables/${task.ref}`}>Open the full journey</Link>
+              <span className="small muted">Flow diagram, timeline by person, where time went, what went well and where it was lost.</span></p>
+            <DeliverableJourney deliverable={task} />
+          </> : (
+            <section className="card">
+              <h2>Workflow stages</h2>
+              {stages.length === 0 ? <p className="muted">This task has no workflow stages.</p> : (
+                <ol className="stages">
+                  {stages.map((s) => (
+                    <StageRow key={s.id} s={s} label={label} memberName={memberName}
+                      canSkip={s.state === "pending" && (acts.has("hand_off") || acts.has("submit"))}
+                      onSkip={() => run({ fn: "task_skip_stage", args: { p_task: id, p_stage: s.id, p_note: null } })} />
+                  ))}
+                </ol>
+              )}
+              <p className="muted small">Wait = time between hand-off and pick-up. Times start from when this tracker began; earlier history is not recorded.</p>
+            </section>
           )}
-          <p className="muted small">Wait = time between hand-off and pick-up. Times start from when this tracker began; earlier history is not recorded.</p>
+        </div>
+      )}
+      {tab === "impact" && <div className="panel-tab" role="tabpanel"><TaskImpactPanel task={task} /></div>}
+      {tab === "history" && (
+        <div className="panel-tab" role="tabpanel">
+        <section className="card">
+          <h2>History</h2>
+          {!task.removed_at && <form className="comment-box" onSubmit={(e) => { e.preventDefault(); if (comment.trim()) run({ fn: "task_comment", args: { p_task: id, p_note: comment } }); }}>
+            <textarea rows={2} placeholder="Add a comment for the team" value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" />
+            <button type="submit" className="button" disabled={!comment.trim() || action.isPending}>Comment</button>
+          </form>}
+          <ol className="history">
+            {events.map((e) => <EventRow key={e.id} e={e} label={label} memberName={memberName} />)}
+          </ol>
         </section>
-      </div>
-
-      <section className="card">
-        <h2>History</h2>
-        <form className="comment-box" onSubmit={(e) => { e.preventDefault(); if (comment.trim()) run({ fn: "task_comment", args: { p_task: id, p_note: comment } }); }}>
-          <textarea rows={2} placeholder="Add a comment for the team" value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Comment" />
-          <button type="submit" className="button" disabled={!comment.trim() || action.isPending}>Comment</button>
-        </form>
-        <ol className="history">
-          {events.map((e) => <EventRow key={e.id} e={e} label={label} memberName={memberName} />)}
-        </ol>
-      </section>
+        </div>
+      )}
 
       {/* ---------------------------------------------------------------- dialogs */}
-      <Modal title="Edit task" open={dialog === "edit"} onClose={() => setDialog(null)} wide>
+      <Modal title={isDeliverable ? "Edit deliverable" : "Edit task"} open={dialog === "edit"} onClose={() => setDialog(null)} wide>
         <TaskForm mode="edit" initial={taskToValues(task)} restrictedEditable={acts.has("edit_restricted")}
           busy={update.isPending} error={update.error} onCancel={() => setDialog(null)}
           onSubmit={(v) => update.mutate({ id, patch: valuesToTask(v) }, { onSuccess: () => setDialog(null) })} />
@@ -234,7 +325,9 @@ export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionCon
         confirm="Unblock" note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
         onConfirm={() => run({ fn: "task_set_status", args: { p_task: id, p_status: "in_progress", p_note: note || null } })} />
       <NoteDialog title="Submit for approval" open={dialog === "submit"} label="Note for the approver (optional)"
-        intro={!task.deliverable_url ? "No deliverable link is attached yet. Add it under Edit details so the approver can check the work." : undefined}
+        intro={isDeliverable
+          ? (openParts > 0 ? `${openParts} of its tasks are still open; the deliverable can be approved only when they are done or cancelled.` : undefined)
+          : !task.deliverable_url ? "No link to the output is attached yet. Add it under Edit details so the approver can check the work." : undefined}
         confirm="Submit" note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
         onConfirm={() => run({ fn: "task_submit_for_approval", args: { p_task: id, p_note: note || null } })} />
       <NoteDialog title="Approve completion" open={dialog === "approve"} label="Feedback (optional)"
@@ -244,8 +337,39 @@ export function TaskPanel({ taskNumber: ref, variant, initialAction, onActionCon
       <NoteDialog title="Request changes" open={dialog === "request_changes"} label="What needs to change?" required
         confirm="Request changes" note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
         onConfirm={() => run({ fn: "task_decide", args: { p_task: id, p_approve: false, p_feedback: note } })} />
-      <NoteDialog title="Cancel task" open={dialog === "cancel"} label="Why is this work being stopped?" required
-        confirm="Cancel task" note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
+      <MoveToBinDialog open={dialog === "delete"} onClose={() => setDialog(null)} busy={bin.isPending} error={bin.error}
+        what={task.kind === "deliverable" ? "deliverable" : "task"} refText={task.title}
+        onConfirm={(reason) => bin.mutate({ fn: "task_remove", args: { p_task: id, p_reason: reason } },
+          { onSuccess: () => { setDialog(null); if (onClose) onClose(); else navigate("/workspace"); } })} />
+      <PurgeDialog open={dialog === "purge"} onClose={() => setDialog(null)} busy={bin.isPending} error={bin.error}
+        what={task.kind === "deliverable" ? "deliverable" : "task"} refText={task.title}
+        onConfirm={() => bin.mutate({ fn: "task_purge", args: { p_task: id } },
+          { onSuccess: () => { setDialog(null); navigate(isAdmin ? "/bin" : "/workspace"); } })} />
+      <ActionDialog title="Accept task request" open={dialog === "accept"} onClose={() => setDialog(null)} busy={action.isPending}
+        error={action.error} confirm="Accept and start" disabled={!task.parent_id && missingImpact(task).length > 0}
+        onConfirm={() => void acceptRequest()}>
+        <p className="muted small">{isDeliverable ? "Accepting puts the deliverable on the desk with the owner below; its tasks can then be added." : "Accepting starts the task with the owner below."} Due date, priority and other details can be changed with Edit details.</p>
+        {!task.parent_id && missingImpact(task).length > 0 && (
+          <p className="form__error" role="alert">Complete the expected business impact first ({missingImpact(task).join(", ")}). Use Edit details, then accept.</p>
+        )}
+        <Field label="Owner">
+          <select value={nextOwner} onChange={(e) => setNextOwner(e.target.value)}>
+            {activeMembers.map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+          </select>
+        </Field>
+        {requestedParts.length > 0 && (
+          <label className="check small field--wide">
+            <input type="checkbox" checked={withParts} onChange={(e) => setWithParts(e.target.checked)} />
+            Also accept its {requestedParts.length} planned task{requestedParts.length > 1 ? "s" : ""} ({requestedParts.map((p) => p.title).join(", ")}), each with its own owner
+          </label>
+        )}
+        <Field label="Note for the requester (optional)"><textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+      </ActionDialog>
+      <NoteDialog title="Decline task request" open={dialog === "decline"} label="Why is it declined?" required
+        confirm="Decline request" note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
+        onConfirm={() => run({ fn: "task_review_request", args: { p_task: id, p_accept: false, p_note: note, p_owner: null } })} />
+      <NoteDialog title={task.status === "requested" ? "Withdraw request" : "Cancel task"} open={dialog === "cancel"} label="Why is this work being stopped?" required
+        confirm={task.status === "requested" ? "Withdraw request" : isDeliverable ? "Cancel deliverable" : "Cancel task"} note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
         onConfirm={() => run({ fn: "task_set_status", args: { p_task: id, p_status: "cancelled", p_note: note } })} />
       <NoteDialog title="Reopen task" open={dialog === "reopen"} label="Why is it being reopened?" required
         confirm="Reopen" note={note} setNote={setNote} busy={action.isPending} error={action.error} onClose={() => setDialog(null)}
@@ -282,7 +406,7 @@ function StageRow({ s, label, memberName, canSkip, onSkip }: {
   );
 }
 
-const EVENT_TEXT: Record<string, string> = {
+export const EVENT_TEXT: Record<string, string> = {
   created: "created the task", status_changed: "changed status", stage_entered: "started stage", picked_up: "picked up",
   handed_off: "handed off", stage_completed: "completed stage", stage_skipped: "skipped stage",
   returned_for_rework: "returned for rework", blocked: "marked blocked", unblocked: "unblocked",
@@ -290,6 +414,7 @@ const EVENT_TEXT: Record<string, string> = {
   cancelled: "cancelled the task", reopened: "reopened the task", comment: "commented",
   owner_changed: "reassigned the task", due_date_changed: "changed the due date", priority_changed: "changed priority",
   goal_changed: "changed the linked goal", publish_date_changed: "changed the publish date",
+  request_accepted: "accepted the request", request_declined: "declined the request",
 };
 
 function EventRow({ e, label, memberName }: { e: TaskEvent; label: (v: string, c: string | null | undefined) => string; memberName: (id: string | null) => string }) {

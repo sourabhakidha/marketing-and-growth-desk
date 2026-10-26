@@ -17,8 +17,7 @@ export function FullPage({ children }: { children: ReactNode }) {
   return (
     <main className="fullpage">
       <div className="fullpage__brand">
-        <span className="brand-mark" aria-hidden="true" />
-        Akidha Marketing Desk
+        <span className="wordmark"><span className="wordmark__name">Akidha</span><span className="wordmark__product">Marketing Desk</span></span>
       </div>
       {children}
     </main>

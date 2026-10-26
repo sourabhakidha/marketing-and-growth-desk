@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Opportunity, Task, TaskEvent, TaskStage, WorkflowTemplate } from "../lib/api.ts";
+import { EMPTY_TASK_IMPACT, type Opportunity, type Task, type TaskEvent, type TaskStage, type WorkflowTemplate } from "../lib/api.ts";
 import { decisionWaits, eventsByTask, flowByGoal, flowByType, ideaToExecution, slowestStage, stagesByTask } from "./flow.ts";
 
 const stage = (over: Partial<TaskStage>): TaskStage => ({
@@ -7,7 +7,7 @@ const stage = (over: Partial<TaskStage>): TaskStage => ({
   entered_at: "2026-10-01T10:00:00Z", ready_at: "2026-10-01T10:00:00Z", picked_up_at: "2026-10-01T11:00:00Z",
   completed_at: "2026-10-01T13:00:00Z", revision_count: 0, ...over,
 });
-const task = (over: Partial<Task> = {}): Task => ({
+const task = (over: Partial<Task> = {}): Task => ({ ...EMPTY_TASK_IMPACT,
   id: "t1", ref: 1, title: "Script", brief: null, task_type: "content_development", work_origin: "planned", priority: null,
   status: "done", owner_id: "nikita", reviewer_id: null, goal_id: "g1", counts_toward_goal: false, deliverable_format: null,
   channel: null, requester: null, due_date: null, estimated_minutes: null, completion_criteria: null, deliverable_url: null,

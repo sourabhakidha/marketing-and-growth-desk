@@ -40,7 +40,7 @@ export function Vocabularies() {
         <h1>Vocabularies</h1>
         <p className="muted">
           Controlled values used across modules. Task type, work origin, status, stage and priority are separate
-          fields and are never combined. Seeded from the Team Roles &amp; Workflow Playbook (decisions D-004, D-013).
+          fields and are never combined. Seeded from the Team Roles &amp; Workflow Playbook.
         </p>
       </header>
       {terms.isPending && <Loading />}

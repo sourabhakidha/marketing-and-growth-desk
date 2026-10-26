@@ -35,7 +35,7 @@ export function Login() {
 
   return (
     <FullPage>
-      <form className="card form" onSubmit={onSubmit} noValidate>
+      <form className="card form login-card" onSubmit={onSubmit} noValidate>
         <h1>Sign in</h1>
         <label>
           Username

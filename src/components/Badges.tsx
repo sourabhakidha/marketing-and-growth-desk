@@ -1,5 +1,5 @@
 const STATUS_TONE: Record<string, string> = {
-  not_started: "neutral", in_progress: "progress", in_review: "review", changes_requested: "warn",
+  requested: "review", not_started: "neutral", in_progress: "progress", in_review: "review", changes_requested: "warn",
   blocked: "danger", done: "ok", cancelled: "muted",
   on_track: "progress", at_risk: "warn", achieved: "ok", not_achieved: "danger",
 };

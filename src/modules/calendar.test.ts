@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Goal, Task } from "../lib/api.ts";
+import { EMPTY_TASK_IMPACT, type Goal, type Task } from "../lib/api.ts";
 import { buildEntries, overloads } from "./Calendar.tsx";
 
-const task = (over: Partial<Task>): Task => ({
+const task = (over: Partial<Task>): Task => ({ ...EMPTY_TASK_IMPACT,
   id: "t", ref: 1, title: "T", brief: null, task_type: "editing", work_origin: "planned", priority: null, status: "in_progress",
   owner_id: "a", reviewer_id: null, goal_id: null, counts_toward_goal: false, deliverable_format: null, channel: null, requester: null,
   due_date: null, estimated_minutes: null, completion_criteria: null, deliverable_url: null, blocker_reason: null,

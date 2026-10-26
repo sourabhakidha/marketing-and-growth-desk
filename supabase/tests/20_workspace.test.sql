@@ -38,10 +38,29 @@ begin;
 select test.ok(test.try('authenticated', 'contributor', $q$
   insert into marketing_os.tasks (title, task_type, work_origin, priority, owner_id, created_by, status, due_date)
   values ('Script 1', 'content_development', 'planned', 'high', test.mid('contributor'), test.mid('admin'), 'done', '2026-11-01')
-$q$) is null, 'contributor can create a task');
-select test.ok((select created_by = test.mid('contributor') and status = 'not_started'
+$q$) is null, 'contributor can request a task');
+select test.ok((select created_by = test.mid('contributor') and status = 'requested'
                 from marketing_os.tasks where title = 'Script 1'),
-  'creator and initial status are set by the server, not the client');
+  'creator is set by the server and a contributor''s task starts as a request');
+select test.ok((select count(*) from marketing_os.task_stages where task_id = test.task('Script 1') and state = 'active') = 0,
+  'a request has no active stage until an admin accepts it');
+select test.ok(test.try('authenticated', 'contributor', $q$select marketing_os.task_pick_up(test.task('Script 1'))$q$) is not null
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_set_status(test.task('Script 1'), 'in_progress')$q$) is not null
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_submit_for_approval(test.task('Script 1'))$q$) is not null,
+  'no workflow action runs on a request');
+select test.ok(test.try('authenticated', 'contributor', $q$select marketing_os.task_review_request(test.task('Script 1'), true)$q$)
+  like '%Only admins%', 'a contributor cannot accept requests');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_review_request(test.task('Script 1'), true)$q$)
+  like '%expected business impact%', 'an admin must complete the impact case before accepting');
+select test.ok(test.try('authenticated', 'admin', $q$
+  update marketing_os.tasks set impact_outcome = 'More qualified inquiries', impact_rationale = 'Fits the funnel',
+    impact_audience = 'Caregivers, Meta', impact_metrics = 'Inquiries per week', impact_evidence = 'hypothesis'
+  where title = 'Script 1'$q$) is null
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_review_request(test.task('Script 1'), true, 'Go ahead')$q$) is null,
+  'admin completes the impact case and accepts the request "Script 1"');
+select test.ok((select status = 'not_started' from marketing_os.tasks where title = 'Script 1')
+  and exists (select 1 from marketing_os.task_events where task_id = test.task('Script 1') and event_type = 'request_accepted' and actor_id = test.mid('admin')),
+  'acceptance starts the task and is recorded with the admin');
 select test.ok((select w.code from marketing_os.tasks t join marketing_os.workflow_templates w on w.id = t.workflow_template_id
                 where t.title = 'Script 1') = 'script_copy', 'default workflow template chosen from task type');
 select test.ok((select count(*) from marketing_os.task_stages where task_id = test.task('Script 1')) = 6,
@@ -181,11 +200,11 @@ select test.ok(test.try('authenticated', 'contributor',
 
 -- ---------------------------------------------------------------- goals
 select test.ok(test.try('authenticated', 'contributor', $q$
-  insert into marketing_os.goals (title, owner_id) values ('My goal', test.mid('contributor'))$q$)
+  insert into marketing_os.goals (title, owner_id, outcome_statement, outcome_rationale, success_measures) values ('My goal', test.mid('contributor'), 'More qualified inquiries', 'Scripts feed the paid funnel', 'Inquiries per week from scripted ads')$q$)
   like 'new row violates row-level security%', 'contributor cannot create goals');
 select test.ok(test.try('authenticated', 'admin', $q$
-  insert into marketing_os.goals (title, owner_id, progress_method, target_quantity, target_unit)
-  values ('Five approved scripts', test.mid('admin'), 'accepted_deliverables', 2, 'scripts')$q$) is null,
+  insert into marketing_os.goals (title, owner_id, progress_method, target_quantity, target_unit, outcome_statement, outcome_rationale, success_measures)
+  values ('Five approved scripts', test.mid('admin'), 'accepted_deliverables', 2, 'scripts', 'More qualified inquiries', 'Scripts feed the paid funnel', 'Inquiries per week from scripted ads')$q$) is null,
   'admin creates a goal');
 select test.ok(test.try('authenticated', 'admin', $q$
   update marketing_os.tasks set goal_id = (select id from marketing_os.goals where title = 'Five approved scripts'),
@@ -194,10 +213,230 @@ select test.ok((select progress_pct from marketing_os.goal_progress p join marke
                 where g.title = 'Five approved scripts') = 50,
   'accepted-deliverable progress = approved counted tasks / target');
 select test.ok(test.try('authenticated', 'admin', $q$
-  insert into marketing_os.goals (title, owner_id, progress_method) values ('Bad', test.mid('admin'), 'accepted_deliverables')$q$)
+  insert into marketing_os.goals (title, owner_id, progress_method, outcome_statement, outcome_rationale, success_measures) values ('Bad', test.mid('admin'), 'accepted_deliverables', 'More qualified inquiries', 'Scripts feed the paid funnel', 'Inquiries per week from scripted ads')$q$)
   like '%goals_deliverables_need_target%', 'deliverable goals need a target quantity');
 select test.ok(test.count_as('authenticated', 'outsider', 'select * from marketing_os.goal_progress') = 0,
   'non-member sees no goal progress');
+
+-- ---------------------------------------------------------------- stage held by an admin (D-028)
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by)
+  values ('Review lock', 'content_development', 'planned', test.mid('contributor'), test.mid('contributor'))$q$) is null,
+  'review-lock fixture task created');
+select test.ok(test.try('authenticated', 'admin', $q$
+  update marketing_os.tasks set impact_outcome = 'More qualified inquiries', impact_rationale = 'Fits the funnel',
+    impact_audience = 'Caregivers, Meta', impact_metrics = 'Inquiries per week', impact_evidence = 'hypothesis'
+  where title = 'Review lock'$q$) is null
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_review_request(test.task('Review lock'), true, 'Go ahead')$q$) is null,
+  'admin completes the impact case and accepts the request "Review lock"');
+select test.ok(test.try('authenticated', 'contributor', $q$select marketing_os.task_hand_off(test.task('Review lock'), test.mid('editor'))$q$) is null
+  and test.try('authenticated', 'editor', $q$select marketing_os.task_hand_off(test.task('Review lock'), test.mid('admin'), 'Ready for review')$q$) is null,
+  'a contributor can hand a stage to an admin for review');
+select test.ok(test.try('authenticated', 'contributor', $q$select marketing_os.task_hand_off(test.task('Review lock'), test.mid('contributor'))$q$)
+  like '%Only the task owner%', 'task owner cannot move a task on while an admin holds the stage');
+select test.ok(test.try('authenticated', 'editor', $q$select marketing_os.task_hand_off(test.task('Review lock'), test.mid('editor'))$q$)
+  like '%Only the task owner%', 'the previous stage owner cannot move it on either');
+select test.ok(test.try('authenticated', 'contributor',
+  $q$select marketing_os.task_skip_stage(test.task('Review lock'), test.stage('Review lock', 'revisions'), 'skip')$q$) like '%Only the task owner%'
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_submit_for_approval(test.task('Review lock'))$q$) like '%Only the task owner%'
+  and test.try('authenticated', 'contributor',
+    $q$select marketing_os.task_return_for_rework(test.task('Review lock'), test.stage('Review lock', 'writing_scripting'), 'pull back')$q$) like '%Only the task owner%'
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_set_status(test.task('Review lock'), 'blocked', 'waiting')$q$) like '%Only the task owner%',
+  'skip, submit, pull back and block are all held while an admin has the stage');
+select test.ok(test.try('authenticated', 'admin',
+  $q$select marketing_os.task_return_for_rework(test.task('Review lock'), test.stage('Review lock', 'writing_scripting'), 'Hook too long')$q$) is null,
+  'the admin can send it back for revision');
+select test.ok(test.try('authenticated', 'editor', $q$select marketing_os.task_hand_off(test.task('Review lock'), test.mid('admin'), 'Revised')$q$) is null,
+  'after a revision the stage owner works again and re-submits to the admin');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_hand_off(test.task('Review lock'), test.mid('contributor'), 'Approved')$q$) is null,
+  'the admin approves the review by handing it on');
+select test.ok(test.try('authenticated', 'contributor',
+  $q$select marketing_os.task_skip_stage(test.task('Review lock'), test.stage('Review lock', 'scheduling_handoff'), 'not needed')$q$) is null,
+  'once the admin hands it back, the owner can move it again');
+
+-- ---------------------------------------------------------------- business impact (D-030)
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by)
+  values ('No impact', 'ad_hoc', 'planned', test.mid('contributor'), test.mid('admin'))$q$) like '%Expected business impact is required%',
+  'an admin cannot create a task without its expected business impact');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by,
+    impact_outcome, impact_rationale, impact_audience, impact_metrics, impact_evidence)
+  values ('With impact', 'ad_hoc', 'planned', test.mid('contributor'), test.mid('admin'),
+    'More app installs from caregivers', 'Caregiver ads convert best', 'Caregivers 35-55, Meta', 'Installs per 1k reach', 'historical')$q$) is null,
+  'an admin creates a task with its expected business impact');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by,
+    impact_outcome, impact_rationale, impact_audience, impact_metrics, impact_evidence)
+  values ('Bad evidence', 'ad_hoc', 'planned', test.mid('contributor'), test.mid('admin'), 'x', 'y', 'z', 'm', 'proven')$q$)
+  like '%tasks_impact_evidence%', 'evidence level must be hypothesis, historical or committed');
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by)
+  values ('Contributor idea', 'ad_hoc', 'planned', test.mid('contributor'), test.mid('contributor'))$q$) is null,
+  'a contributor can still create a task without impact (not forced)');
+select test.ok(test.try('authenticated', 'admin', $q$
+  update marketing_os.tasks set owner_id = test.mid('editor') where title = 'Contributor idea'$q$) like '%Expected business impact is required%',
+  'an admin assigning a task must give its expected business impact');
+select test.ok(test.try('authenticated', 'admin', $q$
+  update marketing_os.tasks set owner_id = test.mid('editor'), impact_outcome = 'Fewer support calls', impact_rationale = 'FAQ gap',
+    impact_audience = 'Existing users, app', impact_metrics = 'Support tickets per week', impact_evidence = 'hypothesis'
+  where title = 'Contributor idea'$q$) is null, 'assigning with the impact case filled in works');
+select test.ok(test.try('authenticated', 'contributor', $q$
+  update marketing_os.tasks set impact_outcome = '  ' where title = 'With impact'$q$) like '%revised but not removed%',
+  'the impact case cannot be emptied once given');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.goals (title, owner_id) values ('Tasks only', test.mid('admin'))$q$) like '%expected business outcome%',
+  'a goal needs its business outcome, rationale and success measures');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.goals (title, owner_id, outcome_statement, outcome_rationale, success_measures, outcome_kind, outcome_metric)
+  values ('Measurable without target', test.mid('admin'), 'o', 'r', 's', 'measurable', 'installs')$q$) like '%goals_measurable_target%',
+  'a measurable outcome needs a metric and a target');
+select test.ok(test.try('authenticated', 'admin', $q$
+  update marketing_os.goals set outcome_status = 'partially_achieved', outcome_evidence = 'Meta report wk 43'
+  where title = 'Five approved scripts'$q$) is null
+  and (select outcome_assessed_by = test.mid('admin') and outcome_assessed_at is not null
+       from marketing_os.goals where title = 'Five approved scripts'),
+  'recording the actual outcome stores who assessed it and when');
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.impact_assessments (subject, task_id) values ('task', test.task('With impact'))$q$) is null
+  and (select status = 'queued' and created_by = test.mid('contributor') from marketing_os.impact_assessments
+       where task_id = test.task('With impact')),
+  'a member can request an AI impact assessment; it starts queued and records the requester');
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.impact_assessments (subject, goal_id) values ('task', (select id from marketing_os.goals limit 1))$q$)
+  like '%impact_assessments_target%', 'an assessment must point at the subject it names');
+select test.ok(test.try('authenticated', 'editor', $q$
+  update marketing_os.impact_assessments set status = 'ready', output = '{}' where task_id = test.task('With impact')$q$) is null
+  and (select status = 'queued' from marketing_os.impact_assessments where task_id = test.task('With impact')),
+  'only the requester can fill in an assessment');
+select test.ok(test.count_as('authenticated', 'outsider', 'select * from marketing_os.impact_assessments') = 0,
+  'non-member sees no assessments');
+
+-- ---------------------------------------------------------------- task requests (D-033)
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by)
+  values ('Decline me', 'ad_hoc', 'planned', test.mid('contributor'), test.mid('contributor'))$q$) is null
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_review_request(test.task('Decline me'), false, '')$q$) like '%reason%',
+  'declining a request needs a reason');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_review_request(test.task('Decline me'), false, 'Not this month')$q$) is null
+  and (select status = 'cancelled' from marketing_os.tasks where title = 'Decline me')
+  and exists (select 1 from marketing_os.task_events where task_id = test.task('Decline me') and event_type = 'request_declined' and note = 'Not this month'),
+  'a declined request is cancelled with its reason recorded');
+-- ---------------------------------------------------------------- recycle bin (D-035)
+select test.ok(test.try('authenticated', 'contributor', $q$select marketing_os.task_remove(test.task('With impact'), 'mine')$q$)
+  like '%Only admins%', 'a contributor cannot delete a task, even their own');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_remove(test.task('With impact'), '  ')$q$)
+  like '%reason%', 'deleting needs a reason');
+select test.ok(test.try('authenticated', 'admin', $q$update marketing_os.tasks set removed_at = now() where title = 'With impact'$q$)
+  like '%Recycle Bin%', 'the bin columns change only through the bin actions');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_remove(test.task('With impact'), 'Duplicate of Script 1')$q$) is null
+  and (select removed_at is not null and removed_by = test.mid('admin') and removed_reason = 'Duplicate of Script 1'
+       from marketing_os.tasks where title = 'With impact'),
+  'an admin moves a task to the Recycle Bin with who, when and why');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_pick_up(test.task('With impact'))$q$) like '%Recycle Bin%'
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_comment(test.task('With impact'), 'hi')$q$) like '%Recycle Bin%',
+  'no workflow action or comment runs on a task in the bin, not even for admins');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_restore(test.task('With impact'))$q$) is null
+  and (select removed_at is null from marketing_os.tasks where title = 'With impact'),
+  'an admin restores it');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_purge(test.task('With impact'))$q$)
+  like '%Recycle Bin%', 'only a task in the bin can be deleted permanently');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_remove(test.task('With impact'), 'Duplicate')$q$) is null
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_purge(test.task('With impact'))$q$) is null
+  and (select purged_at is not null from marketing_os.tasks where title = 'With impact')
+  and exists (select 1 from marketing_os.task_events where task_id = test.task('With impact')),
+  'deleting permanently hides it from the desk but keeps the row and its history in the database');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_restore(test.task('With impact'))$q$) is not null,
+  'a permanently deleted task cannot be restored from the desk');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.goal_remove((select id from marketing_os.goals where title = 'Five approved scripts'), 'Merged')$q$) is null
+  and test.try('authenticated', 'contributor', $q$select marketing_os.goal_restore((select id from marketing_os.goals where title = 'Five approved scripts'))$q$) like '%Only admins%'
+  and test.try('authenticated', 'admin', $q$select marketing_os.goal_restore((select id from marketing_os.goals where title = 'Five approved scripts'))$q$) is null,
+  'goals use the same bin: admin deletes and restores, contributors cannot');
+
+-- ---------------------------------------------------------------- deliverables, parts, channels (D-038, D-039)
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, kind, channel,
+    impact_outcome, impact_rationale, impact_audience, impact_metrics, impact_evidence)
+  values ('Marathi video', 'content_development', 'planned', test.mid('admin'), test.mid('admin'), 'deliverable', 'meta_ads',
+    'More Marathi-speaking installs', 'Regional ads convert', 'Maharashtra, Meta', 'Installs per 1k reach', 'historical')$q$) is null
+  and (select workflow_template_id is null from marketing_os.tasks where title = 'Marathi video')
+  and (select count(*) from marketing_os.task_stages where task_id = test.task('Marathi video')) = 0,
+  'a deliverable is an umbrella with no workflow of its own');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id)
+  values ('Marathi script', 'content_development', 'planned', test.mid('contributor'), test.mid('admin'), test.task('Marathi video'))$q$) is null,
+  'an admin adds a part without repeating the impact case (it is inherited)');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id)
+  values ('Part of a part', 'editing', 'planned', test.mid('contributor'), test.mid('admin'), test.task('Marathi script'))$q$)
+  like '%only be part of a deliverable%', 'only one level: a part cannot have parts');
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id)
+  values ('Marathi edit', 'editing', 'planned', test.mid('editor'), test.mid('contributor'), test.task('Marathi video'))$q$) is null
+  and (select status = 'requested' from marketing_os.tasks where title = 'Marathi edit')
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_review_request(test.task('Marathi edit'), true)$q$) is null,
+  'a contributor requests a part; an admin accepts it without an impact case of its own');
+select test.ok(test.try('authenticated', 'contributor', $q$update marketing_os.tasks set parent_id = null where title = 'Marathi script'$q$)
+  like '%Only admins%', 'only admins move tasks into or out of a deliverable');
+select test.ok(test.try('authenticated', 'admin', $q$update marketing_os.tasks set parent_id = test.task('Marathi video') where title = 'For editor'$q$) is null,
+  'an admin groups an existing task under a deliverable');
+select test.ok(test.try('authenticated', 'admin', $q$select marketing_os.task_submit_for_approval(test.task('Marathi video'))$q$) is null
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_decide(test.task('Marathi video'), true)$q$) like '%unfinished part%',
+  'a deliverable cannot be approved while parts are unfinished');
+select test.ok(test.try('authenticated', 'admin', $q$update marketing_os.tasks set kind = 'deliverable' where title = 'Marathi script'$q$)
+  like '%cannot be turned into a deliverable%', 'kind is fixed after creation');
+select test.ok(test.try('authenticated', 'admin', $q$update marketing_os.tasks set channel = 'billboards' where title = 'Marathi script'$q$)
+  like '%not an active value%'
+  and test.try('authenticated', 'admin', $q$update marketing_os.goals set channel = 'whatsapp' where title = 'Five approved scripts'$q$) is null,
+  'channels come from the fixed list, for tasks and goals');
+
+-- ---------------------------------------------------------------- how a task runs (D-041)
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id, initial_stages)
+  values ('Marathi image 1', 'graphic_designing', 'planned', test.mid('contributor'), test.mid('admin'), test.task('Marathi video'),
+          array['asset_creation'])$q$) is null
+  and (select array_agg(stage_code order by position) from marketing_os.task_stages where task_id = test.task('Marathi image 1')) = array['asset_creation']
+  and (select state = 'active' from marketing_os.task_stages where task_id = test.task('Marathi image 1')),
+  'a standalone task runs a single chosen step and starts there');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id, initial_stages)
+  values ('Script from idea', 'content_development', 'planned', test.mid('contributor'), test.mid('admin'), test.task('Marathi video'),
+          array['writing_scripting', 'internal_review'])$q$) is null
+  and (select array_agg(stage_code order by position) from marketing_os.task_stages where task_id = test.task('Script from idea'))
+      = array['writing_scripting', 'internal_review'],
+  'a workflow can leave out steps that are already done');
+select test.ok(test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id, initial_stages)
+  values ('Bad steps', 'editing', 'planned', test.mid('contributor'), test.mid('admin'), test.task('Marathi video'), array['editing_assembly', 'editing_assembly'])$q$)
+  like '%only once%'
+  and test.try('authenticated', 'admin', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by, parent_id, initial_stages)
+  values ('Bad steps 2', 'editing', 'planned', test.mid('contributor'), test.mid('admin'), test.task('Marathi video'), array['dancing'])$q$)
+  like '%not an active value%',
+  'steps must be real and not repeated');
+select test.ok((select label from marketing_os.vocab_terms where vocabulary = 'workflow_stage' and code = 'asset_creation') = 'Design / Production',
+  'step names are short and plain');
+
+-- ---------------------------------------------------------------- regression: ordinary edits pass the bin guard
+select test.ok(test.try('authenticated', 'contributor', $q$update marketing_os.tasks set brief = 'edited after the bin existed' where title = 'Marathi script'$q$) is null
+  and test.try('authenticated', 'admin', $q$update marketing_os.goals set description = 'edited' where title = 'Five approved scripts'$q$) is null,
+  'members can still save ordinary edits to tasks and goals (the bin guard runs with owner rights)');
+
+-- ---------------------------------------------------------------- audit fixes (D-043)
+select test.ok(test.try('authenticated', 'admin', $q$update marketing_os.tasks set parent_id = null where title = 'Marathi image 1'$q$)
+  like '%business impact is required%',
+  'a task taken out of a deliverable needs its own business impact (it no longer inherits one)');
+select test.ok(test.try('authenticated', 'contributor', $q$
+  insert into marketing_os.tasks (title, task_type, work_origin, owner_id, created_by)
+  values ('Audit request', 'content_development', 'planned', test.mid('contributor'), test.mid('contributor'))$q$) is null
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_set_status(test.task('Audit request'), 'in_progress')$q$)
+      like '%accepts or declines it first%'
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_set_status(test.task('Audit request'), 'cancelled', 'not needed')$q$) is null
+  and test.try('authenticated', 'contributor', $q$select marketing_os.task_set_status(test.task('Audit request'), 'not_started')$q$)
+      like '%Only admins can reopen%'
+  and test.try('authenticated', 'admin', $q$select marketing_os.task_set_status(test.task('Audit request'), 'not_started')$q$)
+      like '%never accepted%',
+  'a request cannot be started before acceptance, and a withdrawn request cannot be reopened');
 
 -- ---------------------------------------------------------------- append-only history
 select test.ok(test.try('postgres', null, 'update marketing_os.task_events set note = $$x$$') like '%append-only%',

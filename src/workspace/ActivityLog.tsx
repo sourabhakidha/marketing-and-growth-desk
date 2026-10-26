@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { useAllTaskEvents, useLookups, useTasks } from "../lib/api.ts";
-import { formatDateTime, taskRef } from "../lib/format.ts";
+import { useLookups, useTasks, useTaskEvents } from "../lib/api.ts";
+import { isBounded } from "../lib/dateRange.ts";
+import { eventTable } from "../lib/exportRows.ts";
+import {formatDateTime} from "../lib/format.ts";
+import { DateRangePicker, ExportCsvButton, useDateRange } from "../components/DateRange.tsx";
+import { useMember } from "../lib/session.tsx";
+import { isMyTask, useScope } from "../lib/scope.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
 
 const TYPE_LABEL: Record<string, string> = {
@@ -15,14 +20,18 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export function ActivityLog() {
-  const events = useAllTaskEvents(500);
+  const dates = useDateRange();
+  const { member: me } = useMember();
+  const { isMe } = useScope();
+  const events = useTaskEvents(dates.range, 500);
   const tasks = useTasks();
   const { memberName, label, members } = useLookups();
   const [actor, setActor] = useState("");
   const [type, setType] = useState("");
 
   const byId = useMemo(() => new Map((tasks.data ?? []).map((t) => [t.id, t])), [tasks.data]);
-  const rows = (events.data ?? []).filter((e) => (!actor || e.actor_id === actor) && (!type || e.event_type === type));
+  const rows = (events.data ?? []).filter((e) => byId.has(e.task_id) && (!actor || e.actor_id === actor) && (!type || e.event_type === type)
+    && (!isMe || e.actor_id === me.id || Boolean(byId.get(e.task_id) && isMyTask(byId.get(e.task_id)!, me.id))));
 
   if (events.isPending) return <Loading />;
   if (events.isError) return <StatePanel title="Could not load activity" tone="error"><p>{events.error.message}</p></StatePanel>;
@@ -38,7 +47,11 @@ export function ActivityLog() {
           <option value="">All events</option>
           {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <span className="muted small">Latest 500 events · full history in Exports</span>
+        <DateRangePicker {...dates} />
+        <span className="muted small">{isBounded(dates.range) ? `${rows.length} events in this period` : "Latest 500 events · pick a period to see all of it"}</span>
+        <span className="filters__end">
+          <ExportCsvButton name="activity" range={dates.range} build={() => eventTable(rows, tasks.data ?? [], { label, memberName })} />
+        </span>
       </div>
       {rows.length === 0 ? <StatePanel title="No activity recorded yet" /> : (
         <div className="table-wrap">
@@ -55,7 +68,7 @@ export function ActivityLog() {
                   <tr key={e.id}>
                     <td>{formatDateTime(e.occurred_at)}</td>
                     <td>{e.actor_id ? memberName(e.actor_id) : "System"}</td>
-                    <td className="wrap">{t ? <Link to={`/workspace/tasks/${t.ref}`}>{taskRef(t.ref)} · {t.title}</Link> : "—"}</td>
+                    <td className="wrap">{t ? <Link to={`/workspace/tasks/${t.ref}`}>{t.title}</Link> : "—"}</td>
                     <td>{TYPE_LABEL[e.event_type] ?? e.event_type}</td>
                     <td className="wrap">{[detail, e.note].filter(Boolean).join(" — ")}</td>
                   </tr>

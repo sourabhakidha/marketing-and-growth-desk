@@ -1,0 +1,84 @@
+/* Business impact layer (D-030): task impact card, goal impact panel, Impact Brief.
+   Uses the shared tokens from styles.css; ratings always carry their words, colour only supports them. */
+
+.impact-fieldset { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .85rem 1rem 1rem; margin: 0; background: var(--surface); }
+.impact-fieldset legend { font-weight: 600; font-size: .9rem; padding: 0 .4rem; color: var(--ink); }
+.impact-fieldset legend .req { font-size: .72rem; font-weight: 600; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: .05rem .5rem; margin-left: .35rem; }
+.impact-fieldset > p { margin: .1rem 0 .7rem; }
+.impact-fieldset__goal { background: var(--brand-tint); border-radius: var(--radius-xs, 6px); padding: .4rem .6rem; }
+
+.impact-card { margin-top: 1rem; }
+.impact-card__head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.impact-card__head h2, .impact-card__head h4 { margin: 0; }
+.impact-dl { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: .35rem 1rem; margin: 0; font-size: .88rem; }
+.impact-dl dt { color: var(--ink-muted); font-weight: 500; }
+.impact-dl dd { margin: 0; white-space: pre-wrap; }
+.impact-warn { color: var(--warn); }
+
+.assess { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.assess__error { color: var(--danger); max-width: 34rem; }
+
+.ai-block { margin-top: .9rem; padding-top: .8rem; border-top: 1px dashed var(--line-strong); display: grid; gap: .55rem; }
+.ai-block h4, .impact-bullets h4 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-muted); margin: .2rem 0 .2rem; }
+.ai-foot { margin: .2rem 0 0; }
+.rated { display: grid; grid-template-columns: minmax(12rem, max-content) 1fr; gap: .2rem .8rem; align-items: start; }
+.rated p { margin: 0; }
+@media (max-width: 640px) { .rated, .impact-dl { grid-template-columns: 1fr; } }
+.impact-bullets ul { margin: .1rem 0 0; padding-left: 1.1rem; }
+
+.rating { display: inline-flex; align-items: center; gap: .35rem; font-size: .76rem; font-weight: 600; border-radius: 999px; padding: .14rem .6rem; border: 1px solid var(--line); background: var(--surface); color: var(--ink); white-space: nowrap; }
+.rating__k { font-weight: 500; color: var(--ink-muted); }
+.rating__k::after { content: ":"; }
+.rating::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: var(--line-strong); flex: none; }
+.rating--good { background: var(--ok-soft); }
+.rating--good::before { background: var(--ok); }
+.rating--mid { background: var(--brand-soft); }
+.rating--mid::before { background: var(--brand); }
+.rating--low { background: var(--danger-soft); }
+.rating--low::before { background: var(--danger); }
+
+/* goal panel */
+.goal-impact { display: grid; gap: .7rem; margin-top: .6rem; }
+.goal-impact__outcome p { margin: 0 0 .3rem; }
+.dual { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .6rem 1.2rem; }
+.dual-bar__top { display: flex; justify-content: space-between; gap: .5rem; font-size: .8rem; color: var(--ink-muted); margin-bottom: .25rem; }
+.dual-bar__top strong { color: var(--ink); font-weight: 600; }
+.dual-bar__track { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.dual-bar__fill { height: 100%; border-radius: 999px; }
+.dual-bar--work .dual-bar__fill { background: var(--teal); opacity: .55; }
+.dual-bar--outcome .dual-bar__fill { background: var(--brand); }
+.rollup { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; font-size: .84rem; color: var(--ink-muted); }
+.rollup strong { color: var(--ink); }
+.flags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.flag { font-size: .76rem; border-radius: var(--radius-xs, 6px); padding: .2rem .55rem; background: var(--warn-soft); color: var(--warn); border: 1px solid var(--line); }
+.flag--important_without_work, .flag--blocked_work, .flag--past_end_date { background: var(--danger-soft); color: var(--danger); }
+.flag--tasks_done_outcome_open { background: var(--brand-soft); color: var(--brand); }
+.inline-ref { margin-right: .35rem; font-weight: 500; }
+.goal-attention { margin-bottom: 1rem; }
+.goal-attention ul { margin: .2rem 0 0; padding-left: 1.1rem; }
+
+/* impact brief */
+.brief-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+.brief-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .75rem; margin: 1rem 0; }
+.brief-kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem 1rem; box-shadow: var(--shadow); display: grid; gap: .1rem; }
+.brief-kpi__label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--accent-ink); font-weight: 600; }
+.brief-kpi strong { font-size: 1.35rem; font-weight: 600; }
+.brief-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.brief-list li { font-size: .88rem; }
+.brief-list .why { display: block; color: var(--ink-muted); font-size: .8rem; }
+.brief-ai { }
+.brief-actions li { padding-left: .1rem; }
+.brief-actions strong { font-weight: 600; }
+.cap-bar { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; min-width: 80px; }
+.cap-bar > span { display: block; height: 100%; background: var(--purple); border-radius: 999px; }
+
+/* capacity tables: full width each, cells wrap, scroll inside the card if ever needed */
+.brief-capacity { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+@media (min-width: 1280px) { .brief-capacity { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; } }
+.brief-capacity .card { min-width: 0; }
+.table-wrap--inset { border-radius: var(--radius-sm); box-shadow: none; margin: .25rem 0 .5rem; }
+.brief-capacity table { width: 100%; min-width: 0; table-layout: auto; }
+.brief-capacity th, .brief-capacity td { white-space: normal; vertical-align: middle; }
+.brief-capacity td.num, .brief-capacity th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; width: 1%; }
+.brief-capacity .cap-bar { margin-top: .3rem; max-width: 16rem; }
+.brief-grid > .card { min-width: 0; }

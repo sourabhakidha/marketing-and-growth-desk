@@ -5,14 +5,17 @@ import {
   type AiDraft, callApi, client, type DraftOutput, type KnowledgeDoc, run, useDrafts, useHealth, useKnowledge, useLookups,
   useOpportunities, useTasks, useWorkflowAction,
 } from "../lib/api.ts";
-import { formatDateTime, taskRef, todayInIndia } from "../lib/format.ts";
+import { useScope } from "../lib/scope.tsx";
+import { draftTable } from "../lib/exportRows.ts";
+import { DateRangePicker, ExportCsvButton, useDateRange } from "../components/DateRange.tsx";
+import {formatDateTime, todayInIndia} from "../lib/format.ts";
 import { DRAFT_STATUS_LABEL } from "../lib/labels.ts";
 import { useMember } from "../lib/session.tsx";
 import { Chip } from "../components/Tone.tsx";
 import { ErrorText, Field, orNull } from "../components/Form.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
-import { oppRef } from "./Opportunities.tsx";
+
 
 export const DAILY_LIMIT = 30;
 const LANGUAGES = ["Hinglish", "Hindi (Devanagari)", "Marathi", "English"];
@@ -31,7 +34,7 @@ export function draftToText(d: AiDraft): string {
   lines.push("", `CTA: ${o.cta}`, `Visual direction: ${o.visual_direction}`);
   if (o.claims_requiring_review.length) lines.push("", "Claims requiring review:", ...o.claims_requiring_review.map((c) => `- ${c}`));
   if (o.assumptions_and_gaps.length) lines.push("", "Assumptions and gaps:", ...o.assumptions_and_gaps.map((c) => `- ${c}`));
-  lines.push("", `AI draft D-${d.ref} (${d.model ?? "model unknown"}) — needs human review before use.`);
+  lines.push("", `AI draft (${d.model ?? "model unknown"}) — needs human review before use.`);
   return lines.join("\n");
 }
 
@@ -52,17 +55,19 @@ export function Intelligence() {
 }
 
 export function Drafts() {
-  const drafts = useDrafts();
+  const drafts = useDrafts(); // latest drafts, for today's count against the daily limit
+  const dates = useDateRange();
+  const listed = useDrafts(dates.range);
   const health = useHealth();
   const { member: me } = useMember();
-  const { memberName } = useLookups();
+  const { memberName, label } = useLookups();
   const [params] = useSearchParams();
-  const [mine, setMine] = useState(true);
+  const { isMe: mine } = useScope();
   const today = todayInIndia();
   const usedToday = (drafts.data ?? []).filter((d) => d.created_by === me.id &&
     new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(d.created_at)) === today).length;
   const aiReady = health.data?.integrations.ai === "configured";
-  const rows = (drafts.data ?? []).filter((d) => !mine || d.created_by === me.id);
+  const rows = (listed.data ?? []).filter((d) => !mine || d.created_by === me.id);
 
   return (
     <div className="intel-grid">
@@ -76,14 +81,14 @@ export function Drafts() {
       </section>
       <section>
         <div className="filters">
-          <label className="check"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only my drafts</label>
+          <DateRangePicker {...dates} />
+          <ExportCsvButton name="ai-drafts" range={dates.range} disabled={listed.isPending} build={() => draftTable(rows, { label, memberName })} />
         </div>
-        {drafts.isPending ? <Loading /> : rows.length === 0 ? <StatePanel title="No drafts yet"><p>Request a brief or script on the left.</p></StatePanel> : (
+        {listed.isPending ? <Loading /> : rows.length === 0 ? <StatePanel title="No drafts yet"><p>Request a brief or script on the left.</p></StatePanel> : (
           <ul className="draft-list">
             {rows.map((d) => (
               <li key={d.id}>
                 <Link to={`/intelligence/drafts/${d.ref}`} className="draft-row">
-                  <span className="ref">D-{d.ref}</span>
                   <span className="draft-row__title">{d.output?.working_title ?? `${d.kind === "script" ? "Script" : "Brief"}${d.format ? ` · ${d.format}` : ""}`}</span>
                   <Chip code={d.status} label={DRAFT_STATUS_LABEL[d.status]!} />
                   <span className="small muted">{memberName(d.created_by)} · {formatDateTime(d.created_at)}</span>
@@ -150,13 +155,13 @@ function NewDraft({ initialTaskRef, initialOppRef, disabled }: { initialTaskRef:
       <Field label="For task">
         <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
           <option value="">No task</option>
-          {openTasks.map((t) => <option key={t.id} value={t.id}>{taskRef(t.ref)} · {t.title}</option>)}
+          {openTasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
         </select>
       </Field>
       <Field label="From approved opportunity" hint="Its audience need, angle, claim checks and linked evidence are used">
         <select value={oppId} onChange={(e) => setOppId(e.target.value)}>
           <option value="">None</option>
-          {approvedOpps.map((o) => <option key={o.id} value={o.id}>{oppRef(o.ref)} · {o.title}</option>)}
+          {approvedOpps.map((o) => <option key={o.id} value={o.id}>{o.title}</option>)}
         </select>
       </Field>
       <div className="grid-form">
@@ -168,7 +173,7 @@ function NewDraft({ initialTaskRef, initialOppRef, disabled }: { initialTaskRef:
         <textarea rows={4} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
       </Field>
       <ErrorText error={error} />
-      {sent && <p className="form__ok small">Draft D-{sent} requested. It usually takes under a minute — it will appear in the list.</p>}
+      {sent && <p className="form__ok small">Draft requested. It usually takes under a minute — it will appear in the list.</p>}
       <div className="form__actions"><button type="button" className="button button--primary" disabled={busy || disabled} onClick={submit}>{disabled ? "Daily limit reached" : busy ? "Requesting…" : "Draft it"}</button></div>
     </div>
   );
@@ -207,7 +212,7 @@ export function DraftDetail() {
 
   return (
     <article className="draft">
-      <p className="crumbs"><Link to="/intelligence">Drafts</Link> / D-{d.ref}</p>
+      <p className="crumbs"><Link to="/intelligence">Drafts</Link> / {d.output?.working_title ?? (d.kind === "script" ? "Script draft" : "Brief draft")}</p>
       <header className="task-detail__header">
         <div>
           <h1>{o?.working_title ?? (d.kind === "script" ? "Script draft" : "Brief draft")}</h1>
@@ -216,8 +221,8 @@ export function DraftDetail() {
             <span className="chip">{d.kind === "script" ? "Script" : "Creative brief"}</span>
             {d.language && <span className="chip">{d.language}</span>}
             {d.format && <span className="chip">{d.format}</span>}
-            {task && <Link className="chip" to={`/workspace/tasks/${task.ref}`}>{taskRef(task.ref)}</Link>}
-            {opp && <Link className="chip" to={`/opportunities/${opp.ref}`}>{oppRef(opp.ref)}</Link>}
+            {task && <Link className="chip" to={`/workspace/tasks/${task.ref}`}>{task.title}</Link>}
+            {opp && <Link className="chip" to={`/opportunities/${opp.ref}`}>{opp.title}</Link>}
           </div>
         </div>
       </header>
@@ -236,8 +241,8 @@ export function DraftDetail() {
             <button type="button" className="button" onClick={async () => { await navigator.clipboard.writeText(draftToText(d)); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>{copied ? "Copied" : "Copy as text"}</button>
             {task && d.status !== "discarded" && (
               <button type="button" className="button" disabled={comment.isPending}
-                onClick={() => comment.mutate({ fn: "task_comment", args: { p_task: task.id, p_note: `AI draft D-${d.ref} attached for review:\n\n${draftToText(d)}`.slice(0, 15000) } })}>
-                {comment.isSuccess ? "Added to task" : `Add to ${taskRef(task.ref)} as comment`}
+                onClick={() => comment.mutate({ fn: "task_comment", args: { p_task: task.id, p_note: `AI draft attached for review:\n\n${draftToText(d)}`.slice(0, 15000) } })}>
+                {comment.isSuccess ? "Added to task" : "Add to the task as a comment"}
               </button>
             )}
             {mine && d.status === "ready" && <>

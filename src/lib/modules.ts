@@ -6,23 +6,21 @@ export interface ModuleDef {
   built: boolean;
   /** shown for modules that are not built yet */
   plannedNote?: string;
+  /** other paths that belong to this module (for the active state in the top bar) */
+  also?: readonly string[];
 }
 
 export const MODULES: readonly ModuleDef[] = [
-  { path: "/workspace", name: "Workspace", built: true,
+  { path: "/ops", name: "Daily Ops", built: true,
+    question: "What is my day: hours, planned work, and time on each task?" },
+  { path: "/workspace", name: "Workspace", built: true, also: ["/goals"],
     question: "What work exists, who owns it, where is it blocked, and what is due?" },
-  { path: "/calendar", name: "Calendar", built: true,
-    question: "What is planned, due, dependent or at risk over time?" },
-  { path: "/radar", name: "Content Radar", built: true,
-    question: "What is happening in our domain, and what sources support it?" },
-  { path: "/opportunities", name: "Content Opportunities", built: true,
-    question: "Which ideas deserve attention, and why?" },
-  { path: "/intelligence", name: "AI Intelligence", built: true,
+  { path: "/radar", name: "Ideas", built: true, also: ["/opportunities"],
+    question: "What is happening in our domain, and which ideas deserve attention?" },
+  { path: "/intelligence", name: "AI", built: true,
     question: "What should we draft next, grounded in our brand and evidence?" },
-  { path: "/learning", name: "Learning Loop", built: true,
-    question: "What did we learn from outcomes and execution?" },
-  { path: "/performance", name: "Performance Planning", built: false, plannedNote: "Deferred by decision D-016",
-    question: "What outcomes are we targeting, what is the actual result, and where is the gap?" },
+  { path: "/insights", name: "Insights", built: true,
+    question: "How is the work going: impact, flow, learnings and the full record?" },
 ];
 
 export const isBuilt = (m: ModuleDef) => m.built;

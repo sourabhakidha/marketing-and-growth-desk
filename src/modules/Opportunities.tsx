@@ -2,29 +2,43 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  client, type Opportunity, run, useCreateTask, useInvalidate, useLookups, useOpportunities, useOpportunity, useSignals,
+  client, type Opportunity, run, useCreateTask, useInvalidate, useLookups, useOpportunities, useOpportunity, useOpportunitySignalLinks, useSignals,
 } from "../lib/api.ts";
-import { formatDateTime, taskRef } from "../lib/format.ts";
+import { inRange } from "../lib/dateRange.ts";
+import { opportunityTable } from "../lib/exportRows.ts";
+import { DateRangePicker, ExportCsvButton, useDateRange } from "../components/DateRange.tsx";
+
+const OPP_DATE_BASES = [
+  { value: "created", label: "Created in period" },
+  { value: "decided", label: "Decided in period" },
+];
+import {formatDateTime} from "../lib/format.ts";
 import { EVIDENCE_LABEL, OBJECTIVE_LABEL, OPP_STATUS_LABEL, SCORE_DIMENSIONS, scoreAverage } from "../lib/labels.ts";
 import { useMember } from "../lib/session.tsx";
+import { useScope } from "../lib/scope.tsx";
 import { Chip } from "../components/Tone.tsx";
 import { PriorityMark, StatusBadge } from "../components/Badges.tsx";
 import { ErrorText, Field, orNull } from "../components/Form.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { Loading, StatePanel } from "../components/States.tsx";
-import { TaskForm, type TaskFormValues, valuesToTask } from "../workspace/TaskForm.tsx";
+import { EMPTY_IMPACT_VALUES, EMPTY_STRUCTURE_VALUES, TaskForm, type TaskFormValues, valuesToTask } from "../workspace/TaskForm.tsx";
 
 export const oppRef = (ref: number) => `O-${ref}`;
 
 // ---------------------------------------------------------------- list
 export function OpportunityList() {
   const opps = useOpportunities();
-  const { memberName } = useLookups();
+  const links = useOpportunitySignalLinks();
+  const { memberName, label } = useLookups();
   const { member: me } = useMember();
   const [status, setStatus] = useState("open");
+  const dates = useDateRange({ bases: OPP_DATE_BASES });
+  const { isMe } = useScope();
   if (opps.isPending) return <Loading />;
   if (opps.isError) return <StatePanel title="Could not load opportunities" tone="error"><p>{opps.error.message}</p></StatePanel>;
-  const rows = opps.data.filter((o) => status === "open" ? ["considering", "needs_research", "approved"].includes(o.status) : !status || o.status === status);
+  const rows = opps.data.filter((o) => (status === "open" ? ["considering", "needs_research", "approved"].includes(o.status) : !status || o.status === status)
+    && inRange(dates.basis === "decided" ? o.decided_at : o.created_at, dates.range)
+    && (!isMe || o.created_by === me.id || o.decided_by === me.id));
   const awaiting = opps.data.filter((o) => o.status === "considering" || o.status === "needs_research").length;
 
   return (
@@ -43,6 +57,10 @@ export function OpportunityList() {
           <option value="">All</option>
           {Object.entries(OPP_STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <DateRangePicker {...dates} />
+        <span className="filters__end">
+          <ExportCsvButton name="opportunities" range={dates.range} disabled={!links.data} build={() => opportunityTable(rows, links.data ?? [], { label, memberName })} />
+        </span>
       </div>
       {rows.length === 0 ? (
         <StatePanel title="No opportunities here">
@@ -51,11 +69,10 @@ export function OpportunityList() {
       ) : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Ref</th><th>Opportunity</th><th>Format</th><th>Priority</th><th>Score</th><th>Status</th><th>Created</th></tr></thead>
+            <thead><tr><th>Opportunity</th><th>Format</th><th>Priority</th><th>Score</th><th>Status</th><th>Created</th></tr></thead>
             <tbody>
               {rows.map((o) => (
                 <tr key={o.id}>
-                  <td><span className="ref">{oppRef(o.ref)}</span></td>
                   <td className="wrap"><Link to={`/opportunities/${o.ref}`}>{o.title}</Link>{o.content_angle && <div className="small muted">{o.content_angle}</div>}</td>
                   <td>{o.suggested_format ?? "—"}</td>
                   <td>{o.priority ? <PriorityMark code={o.priority} label={o.priority[0]!.toUpperCase() + o.priority.slice(1)} /> : "—"}</td>
@@ -232,14 +249,19 @@ export function OpportunityDetail() {
     title: opp.title, task_type: "content_development", work_origin: "planned", owner_id: me.id, priority: opp.priority ?? "", due_date: "",
     goal_id: "", counts_toward_goal: false,
     brief: [opp.content_angle && `Angle: ${opp.content_angle}`, opp.audience && `Audience: ${opp.audience}`, opp.audience_tension && `Need: ${opp.audience_tension}`,
-      opp.proof_checks && `Claim checks: ${opp.proof_checks}`, `From ${oppRef(opp.ref)}.`].filter(Boolean).join("\n"),
+      opp.proof_checks && `Claim checks: ${opp.proof_checks}`, `From the opportunity “${opp.title}”.`].filter(Boolean).join("\n"),
     deliverable_format: opp.suggested_format ?? "", channel: "", requester: "", estimate_hours: "", completion_criteria: "", reviewer_id: "",
     workflow_template_id: "", deliverable_url: "", publish_date: "",
+    ...EMPTY_IMPACT_VALUES, ...EMPTY_STRUCTURE_VALUES,
+    // carry the opportunity's case into the expected impact; the admin still reviews every field
+    impact_outcome: opp.objective ? `Objective: ${opp.objective.replace(/_/g, " ")}` : "",
+    impact_rationale: opp.strategic_rationale ?? "",
+    impact_audience: opp.audience ?? "",
   };
 
   return (
     <article>
-      <p className="crumbs"><Link to="/opportunities">Opportunities</Link> / {oppRef(opp.ref)}</p>
+      <p className="crumbs"><Link to="/opportunities">Opportunities</Link> / {opp.title}</p>
       <header className="task-detail__header">
         <div>
           <h1>{opp.title}</h1>
@@ -309,7 +331,7 @@ export function OpportunityDetail() {
           <button type="button" className="link small" onClick={() => setLinking(true)}>+ Link a Radar signal</button>
           <h2 className="section-title">Work created</h2>
           {tasks.length === 0 ? <p className="muted small">No tasks yet.</p> : (
-            <ul className="linked-tasks">{tasks.map((t) => <li key={t.id}><Link to={`/workspace/tasks/${t.ref}`}>{taskRef(t.ref)} · {t.title}</Link><StatusBadge code={t.status} label={t.status.replace(/_/g, " ")} /></li>)}</ul>
+            <ul className="linked-tasks">{tasks.map((t) => <li key={t.id}><Link to={`/workspace/tasks/${t.ref}`}>{t.title}</Link><StatusBadge code={t.status} label={t.status === "in_review" ? "In review" : t.status === "done" ? "Approved" : (t.status[0]!.toUpperCase() + t.status.slice(1)).replace(/_/g, " ")} /></li>)}</ul>
           )}
         </section>
       </div>
